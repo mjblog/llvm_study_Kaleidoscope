@@ -2,12 +2,11 @@
 cmake_minimum_required (VERSION 2.8)
 
 # 项目信息
-project (toy_compiler_test)
+#project (toy_compiler_test)
 
-# 查找当前目录下的所有源文件
-# 并将名称保存到 DIR_SRCS 变量
-aux_source_directory(. DIR_SRCS)
+FILE(GLOB TEST_SOURCE *.cpp)
+FILE(GLOB COMPILER_SRC ../src/*.cpp)
 
 # 指定生成目标
-add_executable(toy_compiler_test ${DIR_SRCS})
-target_link_libraries (Demo  gtest -)
+add_executable(test_main ${TEST_SOURCE} ${COMPILER_SRC})
+target_link_libraries (test_main gtest pthread)

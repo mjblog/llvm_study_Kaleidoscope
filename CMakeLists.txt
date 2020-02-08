@@ -5,6 +5,9 @@ cmake_minimum_required (VERSION 2.8)
 project (toy_compiler)
 
 set (CMAKE_INCLUDE_CURRENT_DIR ON)
+set (CMAKE_CXX_FLAGS "-g3 -O2")
+set (CMAKE_CXX_FLAGS_DEBUG "-g3 -O0")
+
 include_directories(include)
 # 加入一个配置头文件，用于处理 CMake 对源码的设置
 #configure_file (
@@ -27,6 +30,7 @@ include_directories(include)
 # 并将名称保存到 DIR_SRCS 变量
 aux_source_directory(. DIR_SRCS)
 
+add_subdirectory(test)
 # 指定生成目标
 add_executable(toy_compiler ${DIR_SRCS})
 #target_link_libraries (Demo  ${EXTRA_LIBS})
