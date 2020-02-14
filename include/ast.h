@@ -31,7 +31,7 @@ typedef enum ast_type
 	UNKNOWN_AST
 } ast_t;
 
-/* 设计genrice_ast的目的是为每一个ast提供唯一的id*/
+/* 设计genrice_ast的目的是为每一个ast提供唯一的id和统一的type接口*/
 class generic_ast
 {
 	uint64_t id = 0;
@@ -63,10 +63,11 @@ public:
 	}
 	uint64_t get_id() const {return id;}
 	void set_id(uint64_t in_id) {id = in_id;}
-	const ast_t get_type() const {return type;}
+	ast_t get_type() const {return type;}
 protected:
 	ast_t type;
 };
+
 
 class expr_ast : public generic_ast
 {
@@ -141,7 +142,7 @@ class number_ast : public expr_ast
 	double val;
 public:
 	number_ast(double in_val) : val(in_val) { type = NUMBER_AST;}
-	inline const double get_val() const {return val;}
+	inline double get_val() const {return val;}
 };
 
 class variable_ast : public expr_ast
@@ -155,7 +156,7 @@ public:
 typedef enum binary_operator_type
 {
 	BINARY_ADD,
-	BINARY_MINUS,
+	BINARY_SUB,
 	BINARY_MUL,
 	BINARY_LESS_THAN,
 	BINARY_UNKNOWN
@@ -183,9 +184,9 @@ public:
 		return operator_priority_array[in_op];
 	}
 	int get_priority() const {return get_priority(op);}
-	inline const binary_operator_t get_op() const {return op;}
-	inline  const shared_ptr<expr_ast> get_lhs() const {return LHS;}
-	inline  const shared_ptr<expr_ast> get_rhs() const {return RHS;}
+	inline binary_operator_t get_op() const {return op;}
+	inline const shared_ptr<expr_ast> get_lhs() const {return LHS;}
+	inline const shared_ptr<expr_ast> get_rhs() const {return RHS;}
 	static binary_operator_t get_binary_op_type(token &in)
 	{
 		if (in.get_str().size() != 1|| in != TOKEN_BINARY_OP)
@@ -195,7 +196,7 @@ public:
 			case '+':
 				return BINARY_ADD;
 			case '-':
-				return BINARY_MINUS;
+				return BINARY_SUB;
 			case '*':
 				return BINARY_MUL;
 			case '<':
@@ -226,7 +227,11 @@ public:
 		type = CALL_AST;
 	}
 	const shared_ptr<prototype_ast>& get_callee() const {return callee;}
+	const vector<shared_ptr<expr_ast>>& get_args() const {return args;}
 };
+
+
+using ast_vector_t = vector<shared_ptr<generic_ast>>;
 
 } // end of toy_compiler
 #endif

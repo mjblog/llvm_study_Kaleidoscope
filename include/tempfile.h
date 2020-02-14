@@ -1,3 +1,5 @@
+#ifndef _TEMPFILE_H_
+#define _TEMPFILE_H_
 #include <iostream>
 #include <string>
 #include <cstring>
@@ -41,3 +43,4 @@ public:
 };
 
 }
+#endif

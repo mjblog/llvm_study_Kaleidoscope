@@ -212,9 +212,13 @@ class lexer
 			if (get_binary_op(input_stream, cur_char))
 				return;
 
-			//所有合法的模式走完，报错后，吃掉当前char继续
-			err_print(/*isfatal*/false, "unknown char %c\n", cur_char);
-			cur_char = get_next_char(input_stream);
+			//上面模式处理可能会把cur_char更新为eof，先判断再做非法告警
+			if (cur_char != EOF)
+			{
+				//所有合法的模式走完，报错后，吃掉当前char继续
+				err_print(/*isfatal*/false, "unknown char %c\n", cur_char);
+				cur_char = get_next_char(input_stream);
+			}
 		}
 /*
 到这里一定是eof了，lexer本次工作结束了。

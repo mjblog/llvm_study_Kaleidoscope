@@ -12,7 +12,7 @@ parser的主要职责是从lexer中读取token构建出ast，也就是确定程�
 */
 class parser final
 {
-	vector<shared_ptr<generic_ast>> ast_vec;	//存放所有已经创建的ast
+	ast_vector_t ast_vec;	//存放所有已经创建的ast
 	lexer& linked_lexer;
 	const token& get_cur_token() {return linked_lexer.get_cur_token();}
 	const token& get_next_token() {return linked_lexer.get_next_token();}
@@ -38,7 +38,7 @@ class parser final
 public:
 	parser(lexer& in_lexer) : linked_lexer(in_lexer) {}
 	void parse();
-	const vector<shared_ptr<generic_ast>>& get_ast_vec() const {return ast_vec;};
+	const ast_vector_t& get_ast_vec() const {return ast_vec;};
 };
 
 }   // end of namespace toy_compiler

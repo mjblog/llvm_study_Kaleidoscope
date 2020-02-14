@@ -98,7 +98,7 @@ line5:		y		z
 	auto line2_left = body_bin->get_lhs();
 	ASSERT_TRUE(line2_left->get_type() == BINARY_OPERATOR_AST);
 	binary_operator_ast *line2_left_ptr = static_cast<binary_operator_ast *>(line2_left.get());
-	ASSERT_TRUE(line2_left_ptr->get_op() == BINARY_MINUS);
+	ASSERT_TRUE(line2_left_ptr->get_op() == BINARY_SUB);
 
 //line3:		+				v
 	auto line3_left = line2_left_ptr->get_lhs();
@@ -162,7 +162,7 @@ line5:				y		z
 	auto line2_right = body_bin->get_rhs();
 	ASSERT_TRUE(line2_right->get_type() == BINARY_OPERATOR_AST);
 	binary_operator_ast *line2_right_ptr = static_cast<binary_operator_ast *>(line2_right.get());
-	ASSERT_TRUE(line2_right_ptr->get_op() == BINARY_MINUS);
+	ASSERT_TRUE(line2_right_ptr->get_op() == BINARY_SUB);
 
 //line3:							+			w
 	auto line3_left = line2_right_ptr->get_lhs();
