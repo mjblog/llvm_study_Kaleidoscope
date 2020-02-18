@@ -1,30 +1,9 @@
 #include <sstream>
 #include "lexer.h"
 #include "parser.h"
+#include "test_utils.h"
 #include <gtest/gtest.h>
 using namespace toy_compiler;
-class prepare_parser_for_test_string
-{
-	stringstream test_input;
-	streambuf *backbuf;
-	lexer test_lexer;
-
-public:
-	parser test_parser;
-	prepare_parser_for_test_string(const char * input) : 
-		test_input(input), test_lexer(), test_parser(test_lexer)
-	{
-		backbuf = cin.rdbuf(test_input.rdbuf());
-		test_parser.parse();
-	}
-	~prepare_parser_for_test_string()
-	{
-		cin.rdbuf(backbuf);
-		//必须clear一下，否则前一个stream eof了，后面就无法再用了
-		cin.clear();
-	}
-	auto& get_ast_vec() const {return test_parser.get_ast_vec();}
-};
 
 TEST(test_ast, def)
 {
@@ -54,7 +33,7 @@ TEST(test_ast, def)
 TEST(test_ast, external)
 {
 	//读取string作为输入
-	prepare_parser_for_test_string tdef("extern minus(xp1 yp2) xp1 - yp2");
+	prepare_parser_for_test_string tdef("extern minus(xp1 yp2)");
 	auto& ast_vec = tdef.get_ast_vec();
 	//全局ast中现在只有这个extern
 	auto extern_ast = ast_vec[0];

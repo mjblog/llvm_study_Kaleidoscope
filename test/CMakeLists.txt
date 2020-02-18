@@ -8,6 +8,5 @@ FILE(GLOB TEST_SOURCE *.cpp)
 FILE(GLOB COMPILER_SRC ../src/*.cpp)
 
 # 指定生成目标
-
 add_executable(test_main ${TEST_SOURCE} ${COMPILER_SRC})
-target_link_libraries (test_main gtest pthread ${LLVM_CORE_LIBS})
+target_link_libraries (test_main gtest pthread ${LLVM_LIBS})

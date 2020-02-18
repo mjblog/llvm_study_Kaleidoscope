@@ -52,6 +52,7 @@ public:
 		return true;
 	};
 	virtual void print_IR() = 0;
+	virtual void print_IR_to_str(string& out) = 0;
 };
 
 /*

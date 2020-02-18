@@ -6,14 +6,6 @@
 
 namespace toy_compiler{
 using namespace std;
-/*
-	void gen_function(const function_ast* func) override;
-	void gen_prototype(const prototype_ast* expr) override;
-	void gen_expr(const expr_ast* expr) override;
-	void gen_call(const call_ast* callee) override;
-	void gen_number(const number_ast* num) override;
-	void gen_varaible(const variable_ast* var) override;
-*/
 
 /*
 这里的很多骨架逻辑是可以抽象到父类中去的。
@@ -29,7 +21,7 @@ bool LLVM_IR_code_generator::gen_function(const function_ast* func)
 	auto proto_ptr = proto.get();
 	assert(proto_ptr != nullptr && cur_func == nullptr);
 	const string &func_name = proto_ptr->get_name();
-	Function *new_func = the_module.getFunction(func_name);
+	Function *new_func = the_module->getFunction(func_name);
 	if (new_func)
 	{
 		err_print(false, "found multidef for function %s\n",
@@ -52,7 +44,7 @@ transfer of control bypasses initialization of:
 	}
 
 	//gen_prototype会创建llvm中的函数声明
-	cur_func = the_module.getFunction(func_name);
+	cur_func = the_module->getFunction(func_name);
 	assert(cur_func != nullptr);
 	//创建args查找map，方便后续variable引用
 	cur_func_args.clear();
@@ -95,7 +87,7 @@ bool LLVM_IR_code_generator::gen_prototype(const prototype_ast* proto)
 	FunctionType *FT = FunctionType::get(double_type, arg_vec, false);
 
 	Function *F = Function::Create(FT, Function::ExternalLinkage, 
-		proto->get_name(), &the_module);
+		proto->get_name(), the_module);
 
 	// Set names for all arguments.
 	unsigned idx = 0;
@@ -120,7 +112,6 @@ Value* LLVM_IR_code_generator::build_expr(const expr_ast* expr)
 		case BINARY_OPERATOR_AST:
 			return build_binary_op((binary_operator_ast *)expr);
 		default:
-			;
 			err_print(/*isfatal*/true, "found unknown expr AST, aborting\n");
 	}
 	return nullptr;
@@ -130,7 +121,7 @@ Value* LLVM_IR_code_generator::build_call(const call_ast* callee)
 {
 	// Look up the name in the global module table.
 	const string& callee_name = callee->get_callee()->get_name();
-	Function *callee_func = the_module.getFunction(callee_name);
+	Function *callee_func = the_module->getFunction(callee_name);
 	print_and_return_nullptr_if_check_fail(callee_func != nullptr, 
 		"unknown function %s referenced\n", callee_name.c_str());
 
@@ -202,6 +193,35 @@ Value* LLVM_IR_code_generator::build_binary_op(const binary_operator_ast* bin)
 
 void LLVM_IR_code_generator::print_IR()
 {
-	the_module.print(outs(), nullptr);
+	the_module->print(outs(), nullptr);
 }
+
+void LLVM_IR_code_generator::print_IR_to_str(string& out)
+{
+	raw_string_ostream out_stream(out);
+	the_module->print(out_stream, nullptr);
+	out_stream.flush();
+}
+
+void LLVM_IR_code_generator::print_IR_to_file(int fd)
+{
+	raw_fd_ostream out_stream(fd, /*shouldClose*/false);
+	the_module->print(out_stream, nullptr);
+}
+
+void LLVM_IR_code_generator::print_IR_to_file(string& filename)
+{
+	std::error_code err;		//这样初始化errcode=0
+	raw_fd_ostream out_stream(filename, err);
+	if (err)	//err转bool就看里面有设置errcode
+	{
+		err_print(false, "can not print to %s, reason:%s\n", 
+			filename.c_str(), err.message().c_str());
+		return;
+	}
+	the_module->print(out_stream, nullptr);
+}
+
+
+
 }	//end of toy_compiler

@@ -18,13 +18,19 @@ class LLVM_IR_code_generator final : public code_generator<Value *>
 {
 	LLVMContext the_context;
 	IRBuilder<> ir_builder;
-	Module the_module;
+	Module *the_module;
 	Function* cur_func;
 	std::map<std::string, Value *> cur_func_args;
 public:
 	LLVM_IR_code_generator(StringRef name = "unamed") : ir_builder(the_context) , 
-		the_module(name, the_context) , cur_func(nullptr){}
-	~LLVM_IR_code_generator(){};
+		cur_func(nullptr)
+	{
+		the_module = new(Module)(name, the_context) ;
+	}
+	~LLVM_IR_code_generator()
+	{
+		delete the_module;
+	};
 	bool gen_function(const function_ast* func) override;
 	bool gen_prototype(const prototype_ast* proto) override;
 	Value* build_expr(const expr_ast* expr) override;
@@ -34,6 +40,10 @@ public:
 	Value* build_binary_op(const binary_operator_ast* var) override;
 //	bool codegen(ast_vector_t& global_vec) override;
 	void print_IR() override;
+	void print_IR_to_str(string& out) override;
+	void print_IR_to_file(int fd);
+	void print_IR_to_file(string& filename);
+	Module* get_module(){return the_module;}
 };
 /*
 class MAPLE_IR_code_generator : public code_generator
