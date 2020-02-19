@@ -70,7 +70,7 @@ shared_ptr<function_ast> parser::parse_definition()
 }
 
 
-shared_ptr<prototype_ast> parser::parse_prototype()
+prototype_t parser::parse_prototype()
 {
 //prototype的格式为 函数名 左括号 参数 右括号
 	const token& ident = get_cur_token();
@@ -106,7 +106,7 @@ expr 是最为复杂的ast，有四种子类。从格式上来说，应满足如
 操作数可以是如下几种类型：
 number 数值；identifier 变量；identifier() call调用；(expr) 括号包裹的表达式
 */
-shared_ptr<expr_ast> parser::parse_expr()
+expr_t parser::parse_expr()
 {
 //parse_primary处理所有可能为操作数的情况
 	auto lhs = parse_primary_expr();
@@ -128,7 +128,7 @@ shared_ptr<expr_ast> parser::parse_expr()
 }
 
 //number 数值；identifier 变量；identifier() call调用；(expr) 括号包裹的表达式
-shared_ptr<expr_ast> parser::parse_primary_expr()
+expr_t parser::parse_primary_expr()
 {
 	auto cur_token = get_cur_token();
 	switch (cur_token.get_type())
@@ -140,6 +140,8 @@ shared_ptr<expr_ast> parser::parse_primary_expr()
 			return parse_identifier();
 		case TOKEN_LEFT_PAREN:
 			return parse_paren();
+		case TOKEN_IF:
+			return parse_if();
 		default:
 			err_print(false, "expected number,identifier or '(', but got %s\n",
 				cur_token.get_cstr());
@@ -201,8 +203,8 @@ level1:
 	组装出a<((b*c)+d)
 	再次读取cur_token，由于cur_token已经是EOF，返回a<((b*c)+d)；
 */
-shared_ptr<expr_ast> parser::parse_binary_expr(
-	int prev_op_prio, shared_ptr<expr_ast> lhs)
+expr_t parser::parse_binary_expr(
+	int prev_op_prio, expr_t lhs)
 {
 	while (1)
 	{
@@ -230,7 +232,7 @@ shared_ptr<expr_ast> parser::parse_binary_expr(
 	}
 }
 
-shared_ptr<expr_ast> parser::parse_number()
+expr_t parser::parse_number()
 {
 	string num = get_cur_token().get_str();
 	double num_d;
@@ -248,7 +250,7 @@ shared_ptr<expr_ast> parser::parse_number()
 }
 
 //该函数要处理variable变量和call调用两种情况
-shared_ptr<expr_ast> parser::parse_identifier()
+expr_t parser::parse_identifier()
 {
 	string name = get_cur_token().get_str();
 	auto next_token = get_next_token();
@@ -256,7 +258,7 @@ shared_ptr<expr_ast> parser::parse_identifier()
 		return std::make_shared<variable_ast>(name);
 	else
 		get_next_token(); //吃掉左括号
-	vector<shared_ptr<expr_ast>> args;
+	vector<expr_t> args;
 /*
 剩下的部分为0或多个expr，然后')'
 原示例中要求args中的多个expr以 ','分割是没有必要的，将其去掉
@@ -270,7 +272,7 @@ shared_ptr<expr_ast> parser::parse_identifier()
 			auto find_callee = prototype_ast::find_prototype(name);
 			print_and_return_nullptr_if_check_fail(find_callee != nullptr, 
 				"can not find prototype for %s\n", name.c_str());
-			shared_ptr<prototype_ast> callee(find_callee);
+			prototype_t callee(find_callee);
 			return std::make_shared<call_ast>(callee, std::move(args));
 		}
 		auto arg = parse_expr();
@@ -285,7 +287,7 @@ shared_ptr<expr_ast> parser::parse_identifier()
 }
 
 //paren就是 ( + expr +），剥去括号就是常规的expr解析
-shared_ptr<expr_ast> parser::parse_paren()
+expr_t parser::parse_paren()
 {
 	get_next_token();		//吃掉左括号
 	auto expr = parse_expr();
@@ -302,6 +304,38 @@ shared_ptr<expr_ast> parser::parse_paren()
 		return nullptr;
 }
 
+// if的语法为: IF expr THEN expr ELSE expr
+expr_t parser::parse_if() 
+{
+	const token* cur_token;
+	get_next_token();	//吃掉IF
+	const auto& cond = parse_primary_expr();
+
+	cur_token = &(get_cur_token());
+	print_and_return_nullptr_if_check_fail(*cur_token == TOKEN_THEN, 
+		"expected a 'then' but got %s\n", cur_token->get_cstr());
+	get_next_token();	//吃掉THEN
+	const auto& expr_in_then = parse_primary_expr();
+
+/*
+这里我们强制要求有else分支，这与很多常规命令式语言的设计常识冲突。
+其原因是，当前这个玩具语言的基本设计逻辑是：
+所有的语句都是expr，每一个expr都必须要有value。
+
+这是比较典型的函数式语言设计逻辑，可以参考Haskell和Erlang语言。
+如无else分支，会遇到“cond==false时无法确定if_expr的值”的困境。
+Erlang语言的if如果没有condition为真，会抛出异常。
+当前该语言没有异常，且由于值类型只有double，甚至无法正常表达错误。
+
+综上，最简单的选择还是强制else分支存在。
+*/
+	cur_token = &(get_cur_token());
+	print_and_return_nullptr_if_check_fail(*cur_token == TOKEN_ELSE, 
+		"expected a 'else' but got %s\n", cur_token->get_cstr());
+	const auto& expr_in_else = parse_primary_expr();
+
+	return std::make_shared<if_ast>(cond, expr_in_then, expr_in_else);
+}
 
 void parser::handle_extern()
 {
@@ -318,11 +352,12 @@ void parser::handle_extern()
 	}
 }
 
-shared_ptr<prototype_ast> parser::parse_extern()
+prototype_t parser::parse_extern()
 {
 	get_next_token();		//吃掉extern后就是prototype
 	return parse_prototype();
 }
+
 
 /*
 原示例中全局表达式被放到一个匿名函数中，会产生很多问题，如重名函数等。

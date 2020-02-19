@@ -20,21 +20,22 @@ class parser final
 	void handle_definition();
 	void handle_extern();
 	shared_ptr<function_ast> parse_definition();
-	shared_ptr<prototype_ast> parse_extern();
-	shared_ptr<prototype_ast> parse_prototype();
-	shared_ptr<expr_ast> parse_expr();
-	shared_ptr<expr_ast> parse_primary_expr();
-	shared_ptr<expr_ast> parse_number();
-	shared_ptr<expr_ast> parse_identifier();
-	shared_ptr<expr_ast> parse_paren();
+	prototype_t parse_extern();
+	prototype_t parse_prototype();
+	expr_t parse_expr();
+	expr_t parse_primary_expr();
+	expr_t parse_number();
+	expr_t parse_identifier();
+	expr_t parse_paren();
+	expr_t parse_if() ;
 /*
-	shared_ptr<expr_ast> parse_binary_op_rhs(
-		shared_ptr<expr_ast> lhs,  binary_operator_t prev_op_type, 
+	expr_t parse_binary_op_rhs(
+		expr_t lhs,  binary_operator_t prev_op_type, 
 		int prev_op_prio);
 */
-//	shared_ptr<expr_ast> parser::parse_binary_op_rhs(int prev_op_prio);
-	shared_ptr<expr_ast> parse_binary_expr(int prev_op_prio, 
-			shared_ptr<expr_ast> lhs);
+//	expr_t parser::parse_binary_op_rhs(int prev_op_prio);
+	expr_t parse_binary_expr(int prev_op_prio, 
+			expr_t lhs);
 public:
 	parser(lexer& in_lexer) : linked_lexer(in_lexer) {}
 	void parse();

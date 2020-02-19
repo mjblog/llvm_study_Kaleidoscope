@@ -16,6 +16,9 @@ enum token_type
 	TOKEN_LEFT_PAREN,
 	TOKEN_RIGHT_PAREN,
 	TOKEN_BINARY_OP,
+	TOKEN_IF,
+	TOKEN_THEN,
+	TOKEN_ELSE,
 	TOKEN_EOF,
 	TOKEN_WRONG
 };
@@ -39,6 +42,14 @@ public:
 		if (input == "extern")
 			return TOKEN_EXTERN;
 
+		if (input == "if")
+			return TOKEN_IF;
+		if (input == "then")
+			return TOKEN_THEN;
+		if (input == "else")
+			return TOKEN_ELSE;
+
+		//关键字排除后，作为名称标识
 		return TOKEN_IDENTIFIER;
 	}
 	inline std::string & get_str() {return raw_str;}

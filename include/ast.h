@@ -8,6 +8,15 @@
 #include "lexer.h"
 namespace toy_compiler{
 using namespace std;
+class generic_ast;
+class expr_ast;
+class prototype_ast;
+using ast_vector_t = vector<shared_ptr<generic_ast>>;
+using expr_vector = vector<shared_ptr<expr_ast>>;
+using expr_t = shared_ptr<expr_ast>;
+using prototype_t = shared_ptr<prototype_ast>;
+
+
 /*目前只有三大类AST：
 表达式                          expr_ast
 函数原形                    prototype_ast
@@ -90,7 +99,7 @@ class prototype_ast : public generic_ast,
 		return prototype_tab;
 	}
 public:
-	shared_ptr<prototype_ast> get_shared_ptr()  {return shared_from_this();}
+	prototype_t get_shared_ptr()  {return shared_from_this();}
 	prototype_ast(const string & in_name, vector<string> in_args) :
 		name(in_name), args(std::move(in_args))
 		{ 
@@ -104,7 +113,7 @@ public:
 		}
 	const string& get_name() const { return name; }
 	const vector<string>& get_args() const {return args;}
-	static inline shared_ptr<prototype_ast> find_prototype(const string& key)
+	static inline prototype_t find_prototype(const string& key)
 	{
 		auto result = get_proto_tab().find(key);
 		if (result != get_proto_tab().cend())
@@ -116,18 +125,17 @@ public:
 
 class function_ast : public generic_ast
 {
-	shared_ptr<prototype_ast> prototype;
-	shared_ptr<expr_ast> body;
+	prototype_t prototype;
+	expr_t body;
 public:
-	function_ast(shared_ptr<prototype_ast>  in_prototype,
-		shared_ptr<expr_ast> in_body ) 
+	function_ast(prototype_t  in_prototype, expr_t in_body)
 	{
 		prototype = std::move(in_prototype);
 		body = std::move(in_body);
 		type = FUNCTION_AST;
 	}
-	const shared_ptr<expr_ast> get_body() const{return body;}
-	const shared_ptr<prototype_ast> get_prototype() const{return prototype;}
+	const expr_t& get_body() const{return body;}
+	const prototype_t& get_prototype() const{return prototype;}
 };
 
 /*
@@ -165,11 +173,10 @@ typedef enum binary_operator_type
 class binary_operator_ast : public expr_ast
 {
 	binary_operator_t op;
-	shared_ptr<expr_ast> LHS;
-	shared_ptr<expr_ast> RHS;
+	expr_t LHS;
+	expr_t RHS;
 public:
-	binary_operator_ast(binary_operator_t in_op, 
-		shared_ptr<expr_ast>  in_LHS, shared_ptr<expr_ast>  in_RHS)
+	binary_operator_ast(binary_operator_t in_op, expr_t in_LHS, expr_t in_RHS)
 	{
 		op = in_op;
 		LHS = std::move(in_LHS);
@@ -185,8 +192,8 @@ public:
 	}
 	int get_priority() const {return get_priority(op);}
 	inline binary_operator_t get_op() const {return op;}
-	inline const shared_ptr<expr_ast> get_lhs() const {return LHS;}
-	inline const shared_ptr<expr_ast> get_rhs() const {return RHS;}
+	inline const expr_t& get_lhs() const {return LHS;}
+	inline const expr_t& get_rhs() const {return RHS;}
 	static binary_operator_t get_binary_op_type(token &in)
 	{
 		if (in.get_str().size() != 1|| in != TOKEN_BINARY_OP)
@@ -215,23 +222,35 @@ class call_ast : public expr_ast
 并且正确性检查也更为简单（例如类型是否兼容）。
 缺点就是实现更复杂一些，需要做hash来查找prototype_ast。
 */
-	shared_ptr<prototype_ast> callee;
+	prototype_t callee;
 //这里的args是调用处传入的实际参数
-	vector<shared_ptr<expr_ast>> args;
+	expr_vector args;
 public:
-	call_ast (shared_ptr<prototype_ast> in_callee,
-		vector<shared_ptr<expr_ast>> in_args) 
+	call_ast (prototype_t in_callee, expr_vector in_args) 
 	{
 		callee = std::move(in_callee);
 		args = std::move(in_args);
 		type = CALL_AST;
 	}
-	const shared_ptr<prototype_ast>& get_callee() const {return callee;}
-	const vector<shared_ptr<expr_ast>>& get_args() const {return args;}
+	const prototype_t& get_callee() const {return callee;}
+	const expr_vector& get_args() const {return args;}
 };
 
 
-using ast_vector_t = vector<shared_ptr<generic_ast>>;
+class if_ast : public expr_ast
+{
+	expr_t cond_expr;
+	expr_t then_expr;
+	expr_t else_expr;
+public:
+	if_ast(expr_t c, expr_t t, expr_t e) : cond_expr(c), 
+		then_expr(t), else_expr(e) {}
+	const expr_t& get_cond() const{ return cond_expr;}
+	const expr_t& get_then() const{ return then_expr;}
+	const expr_t& get_else() const{ return else_expr;}
+};
+
+
 
 } // end of toy_compiler
 #endif
