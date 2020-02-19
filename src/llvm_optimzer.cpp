@@ -104,7 +104,54 @@ FPM.doFinalization();
 	return;
 }
 
+void llvm_optimizer::optimize_function(Function& func)
+{
+/*
+这里前面的PassBuilder没有直接用于构建func_optimizer.
+但是没有其提供的registerFunctionAnalyses等接口注册分析pass，
+直接运行func_optimizer会有运行错误。原因推测是这些优化pass需要
+特定分析pass的支持(理论上这个要求是合理的，但需要进一步明确)。
+参考NewPMDriver.cpp中注册全部分析pass的更为稳妥。
+*/
+	TargetMachine * target_machine = get_target_machine();
+/*新的PassManger用法与原示例有较大区别，下面片段来自
+	tools/opt/NewPMDriver.cpp*/
+	class PassBuilder opt_builder(target_machine);
+	LoopAnalysisManager LAM;
+	FunctionAnalysisManager FAM;
+	CGSCCAnalysisManager CGAM;
+	ModuleAnalysisManager MAM;
+
+
+	// Register all the basic analyses with the managers.
+	opt_builder.registerModuleAnalyses(MAM);
+	opt_builder.registerCGSCCAnalyses(CGAM);
+	opt_builder.registerFunctionAnalyses(FAM);
+	opt_builder.registerLoopAnalyses(LAM);
+	opt_builder.crossRegisterProxies(LAM, FAM, CGAM, MAM);
+
+/*
+新版本的PassManager没有提供doInitialization等方法，所以直接run
+FPM.doInitialization();
+FPM.run(*NonConstF);
+FPM.doFinalization();
+*/
+	FunctionPassManager func_optimizer;
+	func_optimizer.addPass(InstCombinePass());
+	func_optimizer.addPass(ReassociatePass());
+	func_optimizer.addPass(GVN());
+	func_optimizer.addPass(SimplifyCFGPass());	
+	func_optimizer.run(func, FAM);
+}
+
+
 #if 0
+/*
+下面函数基于试错注册了分析pass，也能完成优化功能。
+但是参考llvm的代码，registerFunctionAnalyses除了注册pass外，
+还调用了相关的回调函数。这样看起来，
+正确的用法还是应该用用builder来注册所有分析pass。故而废弃下面实现。
+*/
 void llvm_optimizer::optimize_function_try_error(Function& func)
 {
 /*
@@ -114,7 +161,7 @@ fixme!!
 一个比较好的方法，可能是要求调用者自己调用一些init函数，再来优化。
 */
 	FunctionPassManager func_optimizer;
-	//采用的优化pass照抄原示例，以便进行对比
+//采用的优化pass照抄原示例，以便进行对比
 /*
 	// Do simple "peephole" optimizations and bit-twiddling optzns.
 	func_optimizer.addPass(createInstructionCombiningPass());
@@ -124,7 +171,7 @@ fixme!!
 	func_optimizer.addPass(createGVNPass());
 	// Simplify the control flow graph (deleting unreachable blocks, etc).
 	func_optimizer.addPass(createCFGSimplificationPass());
-	*/
+*/
 
 	/*
 	新接口的Passmanager需要注册一些分析的analysis再调用run。
@@ -153,54 +200,8 @@ fixme!!
 
 	func_optimizer.run(func, dummy_FAM);
 }
-#endif
 
-void llvm_optimizer::optimize_function(Function& func)
-{
-/*
-这里前面的PassBuilder没有直接用于构建func_optimizer.
-但是没有其提供的registerFunctionAnalyses等接口注册分析pass，
-直接运行func_optimizer会有运行错误。原因推测是这些优化pass需要
-特定分析pass的支持(理论上这个要求是合理的，但需要进一步明确)。
-参考NewPMDriver.cpp中注册全部分析pass的更为稳妥。
-*/
-	TargetMachine * target_machine = get_target_machine();
-/*新的PassManger用法与原示例有较大区别，下面片段来自
-	tools/opt/NewPMDriver.cpp*/
-	class PassBuilder opt_builder(target_machine);
-	LoopAnalysisManager LAM;
-	FunctionAnalysisManager FAM;
-	CGSCCAnalysisManager CGAM;
-	ModuleAnalysisManager MAM;
-
-
-	// Register all the basic analyses with the managers.
-	opt_builder.registerModuleAnalyses(MAM);
-	opt_builder.registerCGSCCAnalyses(CGAM);
-	opt_builder.registerFunctionAnalyses(FAM);
-	opt_builder.registerLoopAnalyses(LAM);
-	opt_builder.crossRegisterProxies(LAM, FAM, CGAM, MAM);
-
-//	auto opt = (llvm::PassBuilder::OptimizationLevel)2;
-//	FunctionPassManager func_optimizer = std::move(
-//		opt_builder.buildFunctionSimplificationPipeline(opt, llvm::PassBuilder::ThinLTOPhase::None));
-
-/*
-新版本的PassManager没有提供doInitialization等方法，所以直接run
-FPM.doInitialization();
-FPM.run(*NonConstF);
-FPM.doFinalization();
-*/
-	FunctionPassManager func_optimizer;
-	func_optimizer.addPass(InstCombinePass());
-	func_optimizer.addPass(ReassociatePass());
-	func_optimizer.addPass(GVN());
-	func_optimizer.addPass(SimplifyCFGPass());	
-	func_optimizer.run(func, FAM);
-}
-
-
-#if 0
+//下面函数使用了builder，但是无法自己定义优化所用的pass，故废弃。
 void llvm_optimizer::optimize_function_use_builder(Function& func)
 {
 	TargetMachine * target_machine = get_target_machine();
