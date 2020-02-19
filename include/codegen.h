@@ -24,6 +24,8 @@ public:
 	virtual VAL_PTR build_number(const number_ast* num) = 0;
 	virtual VAL_PTR build_variable(const variable_ast* var) = 0;
 	virtual VAL_PTR build_binary_op(const binary_operator_ast* var) = 0;
+	virtual VAL_PTR build_if(const if_ast* if_expr) = 0;
+
 	virtual bool codegen(const ast_vector_t& global_vec) 
 	{
 		for (auto ast : global_vec)

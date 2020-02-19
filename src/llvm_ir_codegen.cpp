@@ -110,7 +110,9 @@ Value* LLVM_IR_code_generator::build_expr(const expr_ast* expr)
 		case VARIABLE_AST:
 			return build_variable((const variable_ast*) expr);
 		case BINARY_OPERATOR_AST:
-			return build_binary_op((binary_operator_ast *)expr);
+			return build_binary_op((const binary_operator_ast *)expr);
+		case IF_AST:
+			return build_if((const if_ast *)expr);
 		default:
 			err_print(/*isfatal*/true, "found unknown expr AST, aborting\n");
 	}
@@ -190,6 +192,93 @@ Value* LLVM_IR_code_generator::build_binary_op(const binary_operator_ast* bin)
 			err_print(true, "unknown binary op, aborting\n");
 	}
 }
+
+
+Value* LLVM_IR_code_generator::build_if(const if_ast* if_expr)
+{
+
+	Value *cond_val = build_expr(if_expr->get_cond().get());
+	print_and_return_nullptr_if_check_fail(cond_val != nullptr,
+		"can not build condition expr for if\n");
+
+	// Convert condition to a bool by comparing non-equal to 0.0.
+	cond_val = ir_builder.CreateFCmpONE(cond_val,
+		ConstantFP::get(the_context, APFloat(0.0)), "ifcond");
+
+	//我们保存到当前正在编译的函数指针在cur_func中，无需下面的语句
+	//Function *TheFunction = Builder.GetInsertBlock()->getParent();
+/*
+下面代码片段的基本思路是先创建三个bb：
+THEN_BB:
+	执行then分支的expr计算，获得val_then
+	goto MERGE_BB;
+ELSE_BB:
+	执行else分支的expr计算，获得val_else
+	fallthrough到下一个BB(由于llvm IR要求所有BB必须以明确的跳转所以这里实际上还是需要一个branch IR指令)
+MERGE_BB:
+	final_if_val = PHI(val_then, val_else)
+
+然后在THEN_BB的前面(也就是创建3个BB前的当前插入点)，
+插入一个条件跳转语句根据cond_val跳入THEN或者ELSE的入口。
+整个IF表达式的结果完成了，其值就是final_if_val。
+其中，最后一步中的PHI是一个虚拟的函数，其逻辑语义是：
+如果控制流从THEN_BB中来，返回val_then
+如果控制流从ELSE_BB中来，返回val_else
+PHI操作是完成IF逻辑的关键点。在具体实现时，
+编译器是通过将final_if_val，val_then，val_else指向同一个寄存器
+或者内存区域来完成这个逻辑语义的。
+
+*/
+// Create blocks for the then and else cases.  Insert the 'then' block at the
+// end of the function.
+/*
+注意then_bb直接插入cur_func了，其余的两个bb还未与cur_func关联。
+猜测原因是then表达式展开时可能生成新的BB（如递归if），如果我们在这里
+把else_bb和merge_bb都插入cur_func函数中，那么then_bb中生成的新bb将会
+被else_bb和merge_bb隔开（在function的bblist上）。按理说，bblist链表
+的顺序并不是很重要，因为bb间的依赖关系是由跳转语句决定的。bblist链表中
+的顺序对程序语义没有影响。从性能上看，打开优化后，bb的顺序本来就要重排，
+应该也没有影响。
+实际测试(直接在这里插入else_bb和merge_bb)显示功能逻辑确实没有区别。
+但是考虑到，无论如何bblist有序是更好的，所以维持原示例的做法。
+*/
+	BasicBlock *then_bb = BasicBlock::Create(the_context, "then", cur_func);
+	BasicBlock *else_bb = BasicBlock::Create(the_context, "else");
+	BasicBlock *merge_bb = BasicBlock::Create(the_context, "if_final");
+//创建条件跳转
+	ir_builder.CreateCondBr(cond_val, then_bb, else_bb);
+
+
+	// emit then_bb中的expr计算指令获取其val
+	ir_builder.SetInsertPoint(then_bb);
+	Value* then_val = build_expr(if_expr->get_then().get());
+	print_and_return_nullptr_if_check_fail(then_val != nullptr,
+		"can not build then expr for if\n");
+	ir_builder.CreateBr(merge_bb);
+// Codegen of 'then' can change the current block, update then_bb for the PHI.
+	then_bb = ir_builder.GetInsertBlock();
+
+	//同样处理else分支
+	cur_func->getBasicBlockList().push_back(else_bb);
+	ir_builder.SetInsertPoint(else_bb);
+	Value* else_val = build_expr(if_expr->get_else().get());
+	print_and_return_nullptr_if_check_fail(else_val != nullptr,
+		"can not build then expr for if\n");
+	ir_builder.CreateBr(merge_bb);
+// Codegen of 'else' can change the current block, update else_bb for the PHI.
+	else_bb = ir_builder.GetInsertBlock();
+
+	// 生成Merge_bb的指令
+	cur_func->getBasicBlockList().push_back(merge_bb);
+	ir_builder.SetInsertPoint(merge_bb);
+	PHINode* PHI_node =
+	ir_builder.CreatePHI(Type::getDoubleTy(the_context), 2, "if_phi");
+	PHI_node->addIncoming(then_val, then_bb);
+	PHI_node->addIncoming(else_val, else_bb);
+
+	return PHI_node;
+}
+
 
 void LLVM_IR_code_generator::print_IR()
 {

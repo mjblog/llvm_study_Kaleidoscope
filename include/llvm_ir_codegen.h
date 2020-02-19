@@ -38,6 +38,7 @@ public:
 	Value* build_number(const number_ast* num) override;
 	Value* build_variable(const variable_ast* var) override;
 	Value* build_binary_op(const binary_operator_ast* var) override;
+	Value* build_if(const if_ast* if_expr) override;
 //	bool codegen(ast_vector_t& global_vec) override;
 	void print_IR() override;
 	void print_IR_to_str(string& out) override;

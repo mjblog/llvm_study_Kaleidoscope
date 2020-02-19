@@ -37,6 +37,7 @@ typedef enum ast_type
 	VARIABLE_AST,
 	BINARY_OPERATOR_AST,
 	CALL_AST,
+	IF_AST,
 	UNKNOWN_AST
 } ast_t;
 
@@ -244,7 +245,7 @@ class if_ast : public expr_ast
 	expr_t else_expr;
 public:
 	if_ast(expr_t c, expr_t t, expr_t e) : cond_expr(c), 
-		then_expr(t), else_expr(e) {}
+		then_expr(t), else_expr(e) {type = IF_AST;}
 	const expr_t& get_cond() const{ return cond_expr;}
 	const expr_t& get_then() const{ return then_expr;}
 	const expr_t& get_else() const{ return else_expr;}

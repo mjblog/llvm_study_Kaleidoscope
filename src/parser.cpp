@@ -309,13 +309,13 @@ expr_t parser::parse_if()
 {
 	const token* cur_token;
 	get_next_token();	//吃掉IF
-	const auto& cond = parse_primary_expr();
+	const auto& cond = parse_expr();
 
 	cur_token = &(get_cur_token());
 	print_and_return_nullptr_if_check_fail(*cur_token == TOKEN_THEN, 
 		"expected a 'then' but got %s\n", cur_token->get_cstr());
 	get_next_token();	//吃掉THEN
-	const auto& expr_in_then = parse_primary_expr();
+	const auto& expr_in_then = parse_expr();
 
 /*
 这里我们强制要求有else分支，这与很多常规命令式语言的设计常识冲突。
@@ -332,7 +332,8 @@ Erlang语言的if如果没有condition为真，会抛出异常。
 	cur_token = &(get_cur_token());
 	print_and_return_nullptr_if_check_fail(*cur_token == TOKEN_ELSE, 
 		"expected a 'else' but got %s\n", cur_token->get_cstr());
-	const auto& expr_in_else = parse_primary_expr();
+	get_next_token();	//吃掉next
+	const auto& expr_in_else = parse_expr();
 
 	return std::make_shared<if_ast>(cond, expr_in_then, expr_in_else);
 }
