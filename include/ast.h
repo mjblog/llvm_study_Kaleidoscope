@@ -38,6 +38,7 @@ typedef enum ast_type
 	BINARY_OPERATOR_AST,
 	CALL_AST,
 	IF_AST,
+	FOR_AST,
 	UNKNOWN_AST
 } ast_t;
 
@@ -101,8 +102,8 @@ class prototype_ast : public generic_ast,
 	}
 public:
 	prototype_t get_shared_ptr()  {return shared_from_this();}
-	prototype_ast(const string & in_name, vector<string> in_args) :
-		name(in_name), args(std::move(in_args))
+	prototype_ast(const string& in_name, vector<string> in_args) :
+		name(std::move(in_name)), args(std::move(in_args))
 		{ 
 			type = PROTOTYPE_AST;
 /*
@@ -237,21 +238,52 @@ public:
 	const expr_vector& get_args() const {return args;}
 };
 
-
+//if语句的格式：IF cond_expr THEN then_expr ELSE else_expr
 class if_ast : public expr_ast
 {
 	expr_t cond_expr;
 	expr_t then_expr;
 	expr_t else_expr;
 public:
-	if_ast(expr_t c, expr_t t, expr_t e) : cond_expr(c), 
-		then_expr(t), else_expr(e) {type = IF_AST;}
+	if_ast(expr_t c, expr_t t, expr_t e) : cond_expr(std::move(c)), 
+		then_expr(std::move(t)), else_expr(std::move(e)) {type = IF_AST;}
 	const expr_t& get_cond() const{ return cond_expr;}
 	const expr_t& get_then() const{ return then_expr;}
 	const expr_t& get_else() const{ return else_expr;}
 };
 
+/*
+	原示例中，for表达式的格式：
+	for i = 1, i < n, 1.0 in
+		expr_xxx
+	所以，ast中需要记录的内容包括
+	指示变量的名称				i
+	指示变量的初始值		1
+	指示变量的终止值		n
+	循环步长						1.0
+	循环体							expr_xxx
+*/
+class for_ast : public expr_ast
+{
+	string induction_var_name;
+	expr_t start;
+	expr_t end;
+	expr_t step;
+	expr_t body;
+public:
+	for_ast(const string& name, expr_t in_start, 
+		expr_t in_end, expr_t in_step, expr_t in_body) : 
+		induction_var_name(std::move(name)), start(std::move(in_start)), 
+		end(std::move(in_end)), step(std::move(in_step)),
+		body(std::move(in_body))
+	{type = FOR_AST;}
 
+	const string& get_idt_name() const{ return induction_var_name;}
+	const expr_t& get_start() const{ return start;}
+	const expr_t& get_end() const{ return end;}
+	const expr_t& get_step() const{ return step;}
+	const expr_t& get_body() const{ return body;}
+};
 
 } // end of toy_compiler
 #endif

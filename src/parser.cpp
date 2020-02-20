@@ -76,7 +76,7 @@ prototype_t parser::parse_prototype()
 	const token& ident = get_cur_token();
 	print_and_return_nullptr_if_check_fail(ident.type == TOKEN_IDENTIFIER, 
 		"expected a identifier but got a %s\n", ident.get_cstr());
-	const string  ident_name = ident.get_str();
+	const string ident_name = ident.get_str();
 
 	auto left_paren = get_next_token();
 	print_and_return_nullptr_if_check_fail(
@@ -310,12 +310,16 @@ expr_t parser::parse_if()
 	const token* cur_token;
 	get_next_token();	//吃掉IF
 	const auto& cond = parse_expr();
+	print_and_return_nullptr_if_check_fail(cond != nullptr, 
+		"failed to parse cond expr in if_ast\n");
 
 	cur_token = &(get_cur_token());
 	print_and_return_nullptr_if_check_fail(*cur_token == TOKEN_THEN, 
 		"expected a 'then' but got %s\n", cur_token->get_cstr());
 	get_next_token();	//吃掉THEN
 	const auto& expr_in_then = parse_expr();
+	print_and_return_nullptr_if_check_fail(expr_in_then != nullptr, 
+		"failed to parse then expr in if_ast\n");
 
 /*
 这里我们强制要求有else分支，这与很多常规命令式语言的设计常识冲突。
@@ -334,8 +338,71 @@ Erlang语言的if如果没有condition为真，会抛出异常。
 		"expected a 'else' but got %s\n", cur_token->get_cstr());
 	get_next_token();	//吃掉next
 	const auto& expr_in_else = parse_expr();
+	print_and_return_nullptr_if_check_fail(expr_in_else != nullptr, 
+		"failed to parse else expr in if_ast\n");
 
 	return std::make_shared<if_ast>(cond, expr_in_then, expr_in_else);
+}
+
+/*
+原示例中，for表达式的格式：
+FOR i = 1, i < n, 1.0 IN
+	body_expr
+为了把 ',' 留给顺序求值operator(与多数语言保持一致)，这里改用':'分割。
+修改后格式为:
+FOR i = 1 : i < n : 1.0 IN
+*/
+expr_t parser::parse_for() 
+{
+	const token* cur_token;
+	get_next_token();									//吃掉FOR
+	cur_token = &(get_cur_token());		//吃掉FOR后，第一个是变量名
+	print_and_return_nullptr_if_check_fail(*cur_token == TOKEN_IDENTIFIER, 
+		"expected a identifier token but got %s\n", cur_token->get_cstr());
+	//parse_identifier可能会返回call的ast，正确性检查还更复杂
+	//我们直接从token中取出induction_var
+	const string idt_var_name = cur_token->get_str();
+	get_next_token();									//吃掉变量名token
+
+	cur_token = &(get_cur_token());		//变量名后是=
+	print_and_return_nullptr_if_check_fail(*cur_token == TOKEN_ASSIGN, 
+		"expected a '=' token but got %s\n", cur_token->get_cstr());
+
+	get_next_token();									//吃掉=，后面是循环变量start值
+	expr_t start  = parse_expr();
+	print_and_return_nullptr_if_check_fail(start != nullptr, 
+		"failed to parse start expr in for_ast\n");
+
+	cur_token = &(get_cur_token());		//循环变量start值后是分隔符":"
+	print_and_return_nullptr_if_check_fail(*cur_token == TOKEN_COLON, 
+		"expected a ':' token but got %s\n", cur_token->get_cstr());
+
+	get_next_token();									//吃掉":"，解析end
+	expr_t end = parse_expr();
+	print_and_return_nullptr_if_check_fail(end != nullptr, 
+		"failed to parse end expr in for_ast\n");
+
+	cur_token = &(get_cur_token());		//end后可能是分隔符":"或者IN
+	expr_t step = nullptr;
+	if (*cur_token == TOKEN_COLON)
+	{
+		get_next_token();							//吃掉":"
+		step = parse_expr();
+		print_and_return_nullptr_if_check_fail(end != nullptr, 
+			"failed to parse step expr in for_ast\n");
+	}
+
+	//走到这里一定是in token了
+	cur_token = &(get_cur_token());
+	print_and_return_nullptr_if_check_fail(*cur_token == TOKEN_IN, 
+		"expected a 'in' token but got %s\n", cur_token->get_cstr());
+
+	get_next_token();							//吃掉"IN"
+	expr_t body = parse_expr();
+	print_and_return_nullptr_if_check_fail(body != nullptr, 
+		"failed to parse body in for_ast\n");
+	return std::make_shared<for_ast>(std::move(idt_var_name), std::move(start),
+		std::move(end), std::move(step), std::move(body));
 }
 
 void parser::handle_extern()

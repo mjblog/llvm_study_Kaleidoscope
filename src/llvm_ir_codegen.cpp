@@ -113,6 +113,8 @@ Value* LLVM_IR_code_generator::build_expr(const expr_ast* expr)
 			return build_binary_op((const binary_operator_ast *)expr);
 		case IF_AST:
 			return build_if((const if_ast *)expr);
+		case FOR_AST:
+			return build_for((const for_ast *)expr);
 		default:
 			err_print(/*isfatal*/true, "found unknown expr AST, aborting\n");
 	}
@@ -196,7 +198,6 @@ Value* LLVM_IR_code_generator::build_binary_op(const binary_operator_ast* bin)
 
 Value* LLVM_IR_code_generator::build_if(const if_ast* if_expr)
 {
-
 	Value *cond_val = build_expr(if_expr->get_cond().get());
 	print_and_return_nullptr_if_check_fail(cond_val != nullptr,
 		"can not build condition expr for if\n");
@@ -240,7 +241,7 @@ PHI操作是完成IF逻辑的关键点。在具体实现时，
 的顺序对程序语义没有影响。从性能上看，打开优化后，bb的顺序本来就要重排，
 应该也没有影响。
 实际测试(直接在这里插入else_bb和merge_bb)显示功能逻辑确实没有区别。
-但是考虑到，无论如何bblist有序是更好的，所以维持原示例的做法。
+但是，考虑到无论如何bblist有序是更好的，所以维持原示例的做法。
 */
 	BasicBlock *then_bb = BasicBlock::Create(the_context, "then", cur_func);
 	BasicBlock *else_bb = BasicBlock::Create(the_context, "else");
@@ -248,14 +249,25 @@ PHI操作是完成IF逻辑的关键点。在具体实现时，
 //创建条件跳转
 	ir_builder.CreateCondBr(cond_val, then_bb, else_bb);
 
-
 	// emit then_bb中的expr计算指令获取其val
 	ir_builder.SetInsertPoint(then_bb);
 	Value* then_val = build_expr(if_expr->get_then().get());
 	print_and_return_nullptr_if_check_fail(then_val != nullptr,
 		"can not build then expr for if\n");
 	ir_builder.CreateBr(merge_bb);
-// Codegen of 'then' can change the current block, update then_bb for the PHI.
+/*
+	这里重新取then_bb非常重要，因为后面的PHI操作需要明确输入的bb。
+	而这里then_bb可能不再与then_val对应的了，如下示例所示。
+then_bb:
+	expr_eval()	---------------->  eval_bb:
+																|
+																|
+then_final_bb:<--------------------|
+	jmp to merge_bb
+
+	关键就在then_val = build_expr(xxx)这句，它可能会创建新的bb。
+	因此，我们需要build_expr后，重新设置then_bb到then_final_bb上。
+*/
 	then_bb = ir_builder.GetInsertBlock();
 
 	//同样处理else分支
@@ -279,6 +291,11 @@ PHI操作是完成IF逻辑的关键点。在具体实现时，
 	return PHI_node;
 }
 
+
+Value* LLVM_IR_code_generator::build_for(const for_ast* for_expr)
+{
+	return nullptr;
+}
 
 void LLVM_IR_code_generator::print_IR()
 {

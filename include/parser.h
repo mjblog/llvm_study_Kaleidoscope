@@ -27,7 +27,8 @@ class parser final
 	expr_t parse_number();
 	expr_t parse_identifier();
 	expr_t parse_paren();
-	expr_t parse_if() ;
+	expr_t parse_if();
+	expr_t parse_for();
 /*
 	expr_t parse_binary_op_rhs(
 		expr_t lhs,  binary_operator_t prev_op_type, 

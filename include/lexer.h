@@ -19,6 +19,10 @@ enum token_type
 	TOKEN_IF,
 	TOKEN_THEN,
 	TOKEN_ELSE,
+	TOKEN_FOR,
+	TOKEN_COLON,
+	TOKEN_IN,
+	TOKEN_ASSIGN,
 	TOKEN_EOF,
 	TOKEN_WRONG
 };
@@ -49,6 +53,15 @@ public:
 		if (input == "else")
 			return TOKEN_ELSE;
 
+		if (input == "for")
+			return TOKEN_FOR;
+		if (input == ":")
+			return TOKEN_COLON;
+		if (input == "in")
+			return TOKEN_IN;
+
+		if (input == "=")
+			return TOKEN_ASSIGN;
 		//关键字排除后，作为名称标识
 		return TOKEN_IDENTIFIER;
 	}
