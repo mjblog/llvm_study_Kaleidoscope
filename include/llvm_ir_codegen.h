@@ -20,7 +20,7 @@ class LLVM_IR_code_generator final : public code_generator<Value *>
 	IRBuilder<> ir_builder;
 	Module *the_module;
 	Function* cur_func;
-	std::map<std::string, Value *> cur_func_args;
+	std::map<std::string, Value *> named_var;
 public:
 	LLVM_IR_code_generator(StringRef name = "unamed") : ir_builder(the_context) , 
 		cur_func(nullptr)

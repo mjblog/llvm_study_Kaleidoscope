@@ -47,9 +47,9 @@ transfer of control bypasses initialization of:
 	cur_func = the_module->getFunction(func_name);
 	assert(cur_func != nullptr);
 	//创建args查找map，方便后续variable引用
-	cur_func_args.clear();
+	named_var.clear();
 	for (auto &arg : cur_func->args())
-		cur_func_args[arg.getName()] = &arg;
+		named_var[arg.getName()] = &arg;
 
 	//3 生成body
 	//设置好插入点，调用build_expr函数获得expr的返回值，构建返回指令
@@ -158,9 +158,9 @@ Value* LLVM_IR_code_generator::build_number(const number_ast* num)
 //当前还未支持局部变量定义和全局变量定义，实际上variable就只有入参
 Value* LLVM_IR_code_generator::build_variable(const variable_ast* var)
 {
-	// cur_func_args 在gen_prorotype时准备好
+	// named_var 在gen_prorotype时准备好
 	const string& var_name = var->get_name();
-	Value *V = cur_func_args[var_name];
+	Value *V = named_var[var_name];
 	print_and_return_nullptr_if_check_fail(V != nullptr, 
 		"Unknown variable name %s\n", var_name.c_str());
 
@@ -291,10 +291,208 @@ then_final_bb:<--------------------|
 	return PHI_node;
 }
 
+#if 0
+/*
+原示例的实现逻辑有问题（或者违背了常规设计）。
+它是先执行body再来检查end条件是否满足。
+这导致下面的循环也会执行一次kout，打印出1来。
+很显然这个逻辑与常规语言的for是不一致的。
+for x=1:x<1 in
+        kout(x)
+*/
+Value* LLVM_IR_code_generator::build_for(const for_ast* for_expr)
+{
+	//先发射计算start value的指令，注意此时还未将变量名称注册到查找map中
+	Value* start_val = build_expr(for_expr->get_start().get());
+	print_and_return_nullptr_if_check_fail(start_val != nullptr, 
+		"can not build start value in for_expr\n");
+
+	//新建循环体的入口bb
+	BasicBlock* preheader_bb = ir_builder.GetInsertBlock();
+	BasicBlock* loop_bb = BasicBlock::Create(the_context, "loop", cur_func);
+	// Insert an explicit fall through from the current block to the LoopBB.
+	ir_builder.CreateBr(loop_bb);
+
+	// Start insertion in LoopBB.
+	ir_builder.SetInsertPoint(loop_bb);
+	/* 
+	在循环体中，induction var(指示变量)有两个可能的值：
+	第一次进入时是start value；
+	多次循环时，其值由本次循环体执行完后指示变量名指向的value给出
+	这里，所以需要用PHI节点来表示指示变量
+	*/
+	const string& idt_name = for_expr->get_idt_name();
+	PHINode* idt_var = ir_builder.CreatePHI(Type::getDoubleTy(the_context),
+										2, for_expr->get_idt_name().c_str());
+	idt_var->addIncoming(start_val, preheader_bb);
+
+/*
+从这里开始，下面的流程再引用idt_var这个名称，就应该去读取PHI的值。
+如果有重名的情况，当前for中的变量名生效。
+但是离开当前for的作用域后，需要还原原来的变量value，所以需要save一下。
+*/
+	Value* old_val = named_var[idt_name];
+	named_var[idt_name] = idt_var;
+
+	//for body的value没有被定义，只要不为空表示没有错误就可以
+	Value* body = build_expr(for_expr->get_body().get());
+	print_and_return_nullptr_if_check_fail(body != nullptr, 
+		"can not build bodyin for_exp\n");
+	
+	//body发射完才是step
+	Value* step_val = nullptr;
+	if (for_expr->get_step())	//step可选，不设置就是1.0
+	{
+		step_val = build_expr(for_expr->get_start().get());
+		print_and_return_nullptr_if_check_fail(step_val != nullptr, 
+			"can not build step value in for_expr\n");
+	}
+	else 
+		step_val = ConstantFP::get(the_context, APFloat(1.0));
+
+	Value* next_idt_val = ir_builder.CreateFAdd(idt_var, step_val, "nextvar");
+
+// Compute the end condition.
+	Value* end_cond = build_expr(for_expr->get_end().get());
+	print_and_return_nullptr_if_check_fail(end_cond != nullptr,
+		"can not build end expr in for_exp\n");
+
+// Convert condition to a bool by comparing non-equal to 0.0.
+	end_cond = ir_builder.CreateFCmpONE(
+		end_cond, ConstantFP::get(the_context, APFloat(0.0)), "loopcond");
+
+// Create the "after loop" block and insert it.
+	BasicBlock* loop_end_bb = ir_builder.GetInsertBlock();
+	BasicBlock* after_loop_bb =
+		BasicBlock::Create(the_context, "afterloop", cur_func);
+//满足循环结束条件fallthrough到after_loop_bb，否则回到循环体开始
+	ir_builder.CreateCondBr(end_cond, loop_bb, after_loop_bb);
+
+	//设置插入点到after_loop_bb，后续指令发射就到循环后面了
+	ir_builder.SetInsertPoint(after_loop_bb);
+
+	//设置示变量(PHI节点)的另外一个入口和值
+	idt_var->addIncoming(next_idt_val, loop_end_bb);
+
+	// Restore the unshadowed variable.
+	if (old_val)
+		named_var[idt_name] = old_val;
+	else
+		named_var.erase(idt_name);
+
+	// for expr always returns 0.0.
+	return Constant::getNullValue(Type::getDoubleTy(the_context));
+}
+#endif
 
 Value* LLVM_IR_code_generator::build_for(const for_ast* for_expr)
 {
-	return nullptr;
+	//先发射计算start value的指令，注意此时还未将变量名称注册到查找map中
+	Value* start_val = build_expr(for_expr->get_start().get());
+	print_and_return_nullptr_if_check_fail(start_val != nullptr, 
+		"can not build start value in for_expr\n");
+/*
+创建各个基础框架bb，他们的作用分区和作用如下 ： 
+preheader_bb:
+	计算induction var(指示变量)的初始值
+	goto to end_check
+end_check:
+	计算end expr的值end_val是否为true
+	if (end_val)
+		goto loop
+	else
+		goto afterloop
+
+loop:
+	计算循环体body expr的值
+	induction var += step
+	goto end_check
+
+after_loop:
+	xxxx后续指令
+*/
+	BasicBlock* preheader_bb = ir_builder.GetInsertBlock();
+	BasicBlock* end_check_bb =
+		BasicBlock::Create(the_context, "end_check", cur_func);
+//参考if的做法，为保持bblist中的顺序一致性，下面两个bb创建后不插入func。
+	BasicBlock* loop_bb = BasicBlock::Create(the_context, "loop");
+	BasicBlock* after_loop_bb = BasicBlock::Create(the_context, "afterloop");
+
+	//创建preheader到end_check的连接(注意插入点现在还在preheader里)
+	ir_builder.CreateBr(end_check_bb);
+
+//现在开始构建循环结束判断bb：
+	ir_builder.SetInsertPoint(end_check_bb);
+
+	/* 
+	induction var(指示变量)有两个可能的值：
+	第一次进入时是start value；
+	多次循环时，其值由本次循环体执行完后指示变量名指向的value给出
+	所以需要用PHI节点来表示指示变量。
+	这里先设置第一种情况
+	*/
+	const string& idt_name = for_expr->get_idt_name();
+	PHINode* idt_var = ir_builder.CreatePHI(Type::getDoubleTy(the_context),
+										2, idt_name);
+	idt_var->addIncoming(start_val, preheader_bb);
+
+	/*
+	发射完start计算后，后续流程再引用idt_name这个名称，就应该
+	去读取PHI的值。	如果有重名的情况，当前for中的变量名生效。
+	但是离开当前for的作用域后，需要还原原来的变量value，
+	所以需要save一下。
+	*/
+	Value* old_val = named_var[idt_name];
+	named_var[idt_name] = idt_var;
+
+	// Compute the end condition.
+	Value* end_cond = build_expr(for_expr->get_end().get());
+	print_and_return_nullptr_if_check_fail(end_cond != nullptr,
+		"can not build end expr in for_exp\n");
+	//这里end_cond被改写成bool
+	end_cond = ir_builder.CreateFCmpONE(
+		end_cond, ConstantFP::get(the_context, APFloat(0.0)), "loopcond");
+	//循环持续条件为true则跳转到循环体，否则跳出循环
+	ir_builder.CreateCondBr(end_cond, loop_bb, after_loop_bb);
+
+//现在开始构建循环body：
+	//注意先挂上头部的loop_bb确保中途生成的bb跟在其后
+	cur_func->getBasicBlockList().push_back(loop_bb);
+	ir_builder.SetInsertPoint(loop_bb);
+
+	//for body的value没有被定义，只要不为空表示没有错误就可以
+	Value* body = build_expr(for_expr->get_body().get());
+	print_and_return_nullptr_if_check_fail(body != nullptr, 
+		"can not build bodyin for_exp\n");
+	
+	//body发射完才是step
+	Value* step_val = nullptr;
+	if (for_expr->get_step())	//step可选，不设置就是1.0
+	{
+		step_val = build_expr(for_expr->get_start().get());
+		print_and_return_nullptr_if_check_fail(step_val != nullptr, 
+			"can not build step value in for_expr\n");
+	}
+	else 
+		step_val = ConstantFP::get(the_context, APFloat(1.0));
+
+	Value* next_idt_val = ir_builder.CreateFAdd(idt_var, step_val, "nextvar");
+	ir_builder.CreateBr(end_check_bb);
+	//设置示变量(PHI节点)的另外一个入口和值
+	idt_var->addIncoming(next_idt_val, loop_bb);
+
+//设置插入点到after_loop_bb，后续指令发射就到循环后面了
+	cur_func->getBasicBlockList().push_back(after_loop_bb);
+	ir_builder.SetInsertPoint(after_loop_bb);
+
+	// Restore the unshadowed variable.
+	if (old_val)
+		named_var[idt_name] = old_val;
+	else
+		named_var.erase(idt_name);
+
+	// for expr always returns 0.0.
+	return Constant::getNullValue(Type::getDoubleTy(the_context));
 }
 
 void LLVM_IR_code_generator::print_IR()

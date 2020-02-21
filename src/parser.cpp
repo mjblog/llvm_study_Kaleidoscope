@@ -142,6 +142,8 @@ expr_t parser::parse_primary_expr()
 			return parse_paren();
 		case TOKEN_IF:
 			return parse_if();
+		case TOKEN_FOR:
+			return parse_for();
 		default:
 			err_print(false, "expected number,identifier or '(', but got %s\n",
 				cur_token.get_cstr());
@@ -414,8 +416,8 @@ void parser::handle_extern()
 	else
 	{
 		/* 吃掉错误的token，尝试继续解析 */
-		err_print(false, "fail to parse a extern prototype,\
-			tring to continue\n");
+		err_print(false, "fail to parse a extern prototype,"
+			"tring to continue\n");
 		get_next_token();
 	}
 }

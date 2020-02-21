@@ -55,13 +55,10 @@ public:
 
 		if (input == "for")
 			return TOKEN_FOR;
-		if (input == ":")
-			return TOKEN_COLON;
+
 		if (input == "in")
 			return TOKEN_IN;
 
-		if (input == "=")
-			return TOKEN_ASSIGN;
 		//关键字排除后，作为名称标识
 		return TOKEN_IDENTIFIER;
 	}
@@ -172,7 +169,8 @@ class lexer
 		return true;
 	}
 
-	inline bool get_paren(std::istream *in, int& cur_char)
+	//解析特殊token，字符 '(' 、')'  、':' 、'='
+	inline bool get_special(std::istream *in, int& cur_char)
 	{
 		if (cur_char == '(')
 		{
@@ -188,6 +186,25 @@ class lexer
 			cur_token.get_str().clear();
 			cur_token.get_str() = ")";
 			cur_token.type = TOKEN_RIGHT_PAREN;
+			cur_char = get_next_char(in);
+			return true;
+		}
+
+		//这里如果还有组合，如::或者==时，需要分别再细化
+		if (cur_char == ':')
+		{
+			cur_token.get_str().clear();
+			cur_token.get_str() = ":";
+			cur_token.type = TOKEN_COLON;
+			cur_char = get_next_char(in);
+			return true;
+		}
+
+		if (cur_char == '=')
+		{
+			cur_token.get_str().clear();
+			cur_token.get_str() = ":";
+			cur_token.type = TOKEN_ASSIGN;
 			cur_char = get_next_char(in);
 			return true;
 		}
@@ -228,12 +245,13 @@ class lexer
 			//尝试解析当前token为数字
 			if (get_number(input_stream, cur_char))
 				return;
-			//尝试解析'('、')'
-			if (get_paren(input_stream, cur_char))
-				return;
 
 			//尝试解析二元操作符
 			if (get_binary_op(input_stream, cur_char))
+				return;
+
+			//尝试解析特殊字符 '(' 、')'  、':' 、'='
+			if (get_special(input_stream, cur_char))
 				return;
 
 			//上面模式处理可能会把cur_char更新为eof，先判断再做非法告警
