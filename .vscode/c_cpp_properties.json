@@ -4,8 +4,8 @@
             "name": "Linux",
             "includePath": [
                 "${workspaceFolder}/**",
-                "${workspaceFolder}/../../opensource/llvmbuild/install/usr/local/include",
-                "/home/majiang/hd/opensource/llvmbuild/install/usr/local/include"
+                "${workspaceFolder}/../../opensource/llvmbuild/newllvm-for-lld/install/usr/local/include"
+                
             ],
             "defines": [],
             "compilerPath": "/usr/bin/gcc",

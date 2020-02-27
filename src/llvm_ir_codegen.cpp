@@ -49,7 +49,7 @@ transfer of control bypasses initialization of:
 	//创建args查找map，方便后续variable引用
 	named_var.clear();
 	for (auto &arg : cur_func->args())
-		named_var[arg.getName()] = &arg;
+		named_var[arg.getName().str()] = &arg;
 
 	//3 生成body
 	//设置好插入点，调用build_expr函数获得expr的返回值，构建返回指令

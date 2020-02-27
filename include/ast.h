@@ -2,6 +2,7 @@
 #define _AST_H_
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <vector>
 #include <memory>
 #include <unordered_map>
@@ -87,6 +88,12 @@ public:
 	virtual ~expr_ast() {}
 };
 
+/*
+逻辑上看，用户自定义的operator应该作为prototype_ast的子类来建模。
+但是由于operator的特有之处太少(就是多了一个优先级)，
+专门定义一个class会引入额外的类型转换，不太值得。
+所以还是维持原示例的设计，将operator放入prototype中。
+*/
 class prototype_ast : public generic_ast, 
 	public enable_shared_from_this<prototype_ast>
 {
@@ -94,34 +101,142 @@ class prototype_ast : public generic_ast,
 /* args理论上应该指向ast以表达类型信息。
 这个玩具语言只有double型，所以用string也可以。 */
 	vector<string> args;
+//test时多条测试会在prototype_tab留下干扰数据，需要clear
+	friend class prepare_parser_for_test_string;
 //所有的原型都放在这里，以便call的时候查找，算是函数符号表了
-	static unordered_map<string, prototype_ast*>& get_proto_tab()
+	static unordered_map<string_view, prototype_ast*>& get_proto_tab()
 	{
-		static unordered_map<string, prototype_ast*> prototype_tab;
+		static unordered_map<string_view, prototype_ast*> prototype_tab;
 		return prototype_tab;
 	}
+	//为支持operator增加两个字段
+	bool is_operator = false;
+	int priority_for_binary = -1;
 public:
 	prototype_t get_shared_ptr()  {return shared_from_this();}
-	prototype_ast(const string& in_name, vector<string> in_args) :
-		name(std::move(in_name)), args(std::move(in_args))
-		{ 
+	prototype_ast(const string& name, vector<string> args,
+		bool is_operator = false, int priority_for_binary = -1) :
+		name(std::move(name)), args(std::move(args)),
+		is_operator(is_operator), priority_for_binary(priority_for_binary)
+		{
 			type = PROTOTYPE_AST;
+/*
+为了简单，暂时将重复定义设置为致命错误，
+这样可以直接在constructor中检查并abort。
+如果要做得更细，可以在parse proto的函数中做检查。
+*/
+			if (check_redefine(this->name, is_operator))
+				err_print(true, "%s redefined\n", this->name.c_str());
 /*
 这里如果用shared_ptr，会导致this指针被两个shared_ptr持有，会有重复释放
 解决shared_ptr使用this指针需要用到特殊的模板，参考https://en.cppreference.com/w/cpp/memory/enable_shared_from_this/enable_shared_from_this
 注意shared_from_this调用时，this必须已经被一个shared_ptr持有，因此不能直接在constructor中使用get_shared_ptr
 */
-			get_proto_tab().insert(make_pair(name, this));
+
+/*
+注意这里一定要先转为string_view再make_pair，否则这里会临时构造出一个
+pair<string, prototype_t*> 再转为 pair<string_view, prototype_t*>再insert。
+这会导致get_proto_tab中的key 变成一个指向临时stack变量的string_view。
+一定注意make_pair是根据入参确定返回值的，所以要先转换好再传入。
+*/
+			get_proto_tab().insert(make_pair(string_view(this->name), this));
 		}
 	const string& get_name() const { return name; }
 	const vector<string>& get_args() const {return args;}
-	static inline prototype_t find_prototype(const string& key)
+	static inline prototype_t find_prototype(const string_view& key)
 	{
-		auto result = get_proto_tab().find(key);
+		const auto& result = get_proto_tab().find(key);
 		if (result != get_proto_tab().cend())
 			return result->second->get_shared_ptr();
 		else
 			return nullptr;
+	}
+/*
+	由于操作符命名错误较为少见，且出错时通常会导致难以察觉的行为异常。
+	当前将所有的这类错误视为致命错误，出错时直接abort。
+*/
+	static bool verify_operator_sym(const string& sym,
+		const bool is_fatal = true)
+	{
+		bool is_wrong = false;
+		int sym_len = sym.length();
+
+		//不支持超过2字符的operator
+		if (sym_len > 2)
+		{
+			err_print(is_fatal, "operator %s is longer than 2,"
+				"which is not supported\n", sym.c_str());
+			is_wrong = true;
+		}
+
+		//不能覆盖builtin的操作符，这样的定义无效
+		if (sym_len == 1
+			&& lexer::find_protected_char_token(sym[0]) != TOKEN_UNDEFINED)
+		{
+			err_print(is_fatal, "%s is a protected char, "
+				" shoud not be redefined\n", sym.c_str());
+			is_wrong = true;
+		}
+
+		//不支持使用数字或者字符，避免与函数调用混淆
+		if (isalnum(sym[0]) || 
+			(sym.length() ==2 && isalnum(sym[1])))
+		{
+			err_print(is_fatal, "operator %s should not contain alphabetic"
+				"character or digit\n", sym.c_str());
+			is_wrong = true;
+		}
+		return is_wrong;
+	}
+
+/*
+为operator构建统一的(包含操作数个数和优先级信息)全局链接名称。
+以便库方式定义的operator能够正常，且能正确地被引用(优先级一致)。
+*/
+	static string build_operator_external_name(int op_num,
+		const string& sym, double prio = 0)
+	{
+		assert(op_num == 1 || op_num == 2);
+		//prio已经明确是1~100，为了简化和明确输出，先转为int
+		int int_prio = prio;
+		const string prefix = op_num>1 ? "_binary_" : "_unary_" ;
+		//名称中植入优先级，库定义与extern声明不一致时会链接失败
+		return prefix + sym + "_with_prio_" + to_string(int_prio);
+	}
+
+	inline bool check_redefine(const string& name, bool is_operator = true)
+	{
+		bool redefined = false;
+		if (!is_operator)	//普通函数
+		{
+			if (find_prototype(name) != nullptr)
+				redefined = true;
+		}
+		else
+		{
+/* 
+operator的检查比较复杂。
+为了保证定义和引用时operator优先级一致，
+operator的name尾部植入了优先级数值。
+重复定义检查时要先抠掉优先级，并且还需要一并
+污染掉无优先级的名称(以表示本operator已经定义)。
+目前这样的机制设计，仍有一种特殊情况比较模糊：
+a中定义operatorX 优先级20,
+b中定义operatorX 优先级10,
+c中extern operatorX 优先级引用10；
+如果a中的定义是一种错误，我们也无法检查出来。
+一种比较简单的补救措施是，定义operator时同时输出
+带优先级和不带优先级的名称，链接时可以报重复定义。
+考虑到必要性不强，暂不实施。
+*/
+			const std::string_view org_op_name(name.c_str() , name.rfind('_'));
+			if (find_prototype(org_op_name) != nullptr) 
+				redefined = true;
+			else
+				//污染掉不带优先级的名称，同一个operator多个优先级也不允许
+				get_proto_tab().insert(make_pair(org_op_name, this));
+		}
+		return redefined;
 	}
 };
 
@@ -130,10 +245,9 @@ class function_ast : public generic_ast
 	prototype_t prototype;
 	expr_t body;
 public:
-	function_ast(prototype_t  in_prototype, expr_t in_body)
+	function_ast(prototype_t  prototype, expr_t body) :
+		prototype(std::move(prototype)), body(std::move(body))
 	{
-		prototype = std::move(in_prototype);
-		body = std::move(in_body);
 		type = FUNCTION_AST;
 	}
 	const expr_t& get_body() const{return body;}
@@ -151,7 +265,7 @@ class number_ast : public expr_ast
 {
 	double val;
 public:
-	number_ast(double in_val) : val(in_val) { type = NUMBER_AST;}
+	number_ast(double val) : val(val) { type = NUMBER_AST;}
 	inline double get_val() const {return val;}
 };
 
@@ -159,7 +273,7 @@ class variable_ast : public expr_ast
 {
 	string name;
 public:
-	variable_ast(const string & in_name) : name(in_name) { type = VARIABLE_AST;}
+	variable_ast(const string & name) : name(name) { type = VARIABLE_AST;}
 	const string& get_name() const {return  name;}
 };
 
@@ -169,6 +283,7 @@ typedef enum binary_operator_type
 	BINARY_SUB,
 	BINARY_MUL,
 	BINARY_LESS_THAN,
+	BINARY_USER_DEFINED,		//用户自定义扩展的操作符
 	BINARY_UNKNOWN
 } binary_operator_t;
 
@@ -178,13 +293,12 @@ class binary_operator_ast : public expr_ast
 	expr_t LHS;
 	expr_t RHS;
 public:
-	binary_operator_ast(binary_operator_t in_op, expr_t in_LHS, expr_t in_RHS)
+	binary_operator_ast(binary_operator_t op, expr_t LHS,
+		expr_t RHS) : op(op), LHS(std::move(LHS)), RHS(std::move(RHS))
 	{
-		op = in_op;
-		LHS = std::move(in_LHS);
-		RHS = std::move(in_RHS);
 		type = BINARY_OPERATOR_AST;
 	}
+
 	static int get_priority(binary_operator_t in_op)
 	{
 		//确保这里的优先级数值与enum binary_op保持一致
@@ -198,19 +312,28 @@ public:
 	inline const expr_t& get_rhs() const {return RHS;}
 	static binary_operator_t get_binary_op_type(token &in)
 	{
-		if (in.get_str().size() != 1|| in != TOKEN_BINARY_OP)
+		if (in.get_str().size() > 2|| !is_binary_operator_token(in))
 			return BINARY_UNKNOWN;
-		switch (in.get_str()[0])
+
+		if (in == TOKEN_BINARY_OP)	//内置运算符
 		{
-			case '+':
-				return BINARY_ADD;
-			case '-':
-				return BINARY_SUB;
-			case '*':
-				return BINARY_MUL;
-			case '<':
-				return BINARY_LESS_THAN;
+			switch (in.get_str()[0])
+			{
+				case '+':
+					return BINARY_ADD;
+				case '-':
+					return BINARY_SUB;
+				case '*':
+					return BINARY_MUL;
+				case '<':
+					return BINARY_LESS_THAN;
+			}
+			return BINARY_UNKNOWN;
 		}
+
+		if (in == TOKEN_USER_DEFINED_OPERATOR)
+			return BINARY_USER_DEFINED;
+		
 		return BINARY_UNKNOWN;
 	}
 };

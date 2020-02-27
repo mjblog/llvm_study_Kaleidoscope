@@ -259,5 +259,42 @@ TEST(test_ast, if_ast)
 	ASSERT_TRUE(body_if->get_cond()->get_type() == BINARY_OPERATOR_AST );
 	ASSERT_TRUE(body_if->get_then()->get_type() == IF_AST);
 	ASSERT_TRUE(body_if->get_else()->get_type() == NUMBER_AST);
+}
+
+
+TEST(test_ast, for_ast)
+{
+	//读取string作为输入
+	prepare_parser_for_test_string tdef(
+"def mt1(i) i + 1												"
+"def mt(x)															"
+"for i = 1 : i < 5 : 1 in										"
+"	mt1(i + x)														");
+	auto& ast_vec = tdef.get_ast_vec();
+	//全局ast中有两个函数
+
+	auto first = ast_vec[0];
+	ASSERT_TRUE(first->get_type() == FUNCTION_AST);
+	function_ast* func_ptr = static_cast<function_ast *> (first.get());
+	prototype_ast* prototype_ptr = func_ptr->get_prototype().get();
+	ASSERT_TRUE(prototype_ptr->get_name() == "mt1");
+
+	auto second = ast_vec[1];
+	ASSERT_TRUE(second->get_type() == FUNCTION_AST);
+	function_ast* func_ptr2 = static_cast<function_ast *> (second.get());
+	prototype_ast* prototype_ptr2 = func_ptr2->get_prototype().get();
+	ASSERT_TRUE(prototype_ptr2->get_name() == "mt");
+
+	expr_ast*  body = func_ptr2->get_body().get();
+	ASSERT_TRUE(body->get_type() == FOR_AST);
+	for_ast* body_for = static_cast<for_ast *>(body);
+	ASSERT_TRUE(body_for->get_idt_name() == "i" );
+	ASSERT_TRUE(body_for->get_start()->get_type() == NUMBER_AST);
+	ASSERT_TRUE(body_for->get_end()->get_type() == BINARY_OPERATOR_AST);
+	ASSERT_TRUE(body_for->get_step()->get_type() == NUMBER_AST);
+}
+
+TEST(test_ast, user_defined_binary_operator_ast)
+{
 
 }

@@ -1,5 +1,6 @@
 #include <cassert>
 #include <memory>
+#include <string>
 #include "parser.h"
 #include "utils.h"
 namespace toy_compiler{
@@ -70,13 +71,59 @@ shared_ptr<function_ast> parser::parse_definition()
 }
 
 
+//解析函数原型（也包括用户自定义的operator）
 prototype_t parser::parse_prototype()
 {
-//prototype的格式为 函数名 左括号 参数 右括号
-	const token& ident = get_cur_token();
-	print_and_return_nullptr_if_check_fail(ident.type == TOKEN_IDENTIFIER, 
-		"expected a identifier but got a %s\n", ident.get_cstr());
-	const string ident_name = ident.get_str();
+/*
+prototype有三种格式。
+第一种是函数： 函数名 左括号 参数 右括号
+第二种是用户定义的binary operator： binary 符号 优先级 左括号 参数 右括号
+第三种是用户定义的unary operator： unary 符号 左括号 参数 右括号
+后面的参数部分可以复用代码
+*/
+	const token* cur_token = &get_cur_token();
+	string name;
+
+/*
+命名错误的用户定义operator会导致各种不可预期的错误：
+如用户重新定义已经builtin的 '+'，则用户的定义无法生效。
+用户定义一个合法的identifier名称如abc，很容易与函数定义产生冲突，
+例如库里定义了operator abc，用户代码里又再定义了abc函数，调用时会产生二义性。
+*/
+	int args_num_limit = -1;	//operator需要限制入参个数
+	string op_sym;
+	double prio;
+	switch (*cur_token)
+	{
+		case TOKEN_IDENTIFIER:
+			name = cur_token->get_str();
+			break;
+		case TOKEN_BINARY:
+			args_num_limit = 2;
+			op_sym = get_next_token().get_str();
+/*
+检查用户定义的operator符号是否合法。
+当前不合法我们是直接abort了，所以返回值实际上无用。
+*/
+			prototype_ast::verify_operator_sym(op_sym);
+			prio = get_double_from_number_token(get_next_token());
+			print_and_return_nullptr_if_check_fail (prio > 1 && prio < 100, 
+				"Invalid precedence %lf for operator %s, should be 1~100\n",
+					prio, get_cur_token().get_cstr());
+			name = prototype_ast::build_operator_external_name(2,
+																op_sym, prio);
+			break;
+		case TOKEN_UNARY:
+			args_num_limit = 1;
+			op_sym = get_next_token().get_str();
+			prototype_ast::verify_operator_sym(op_sym);
+			name = prototype_ast::build_operator_external_name(1,
+																op_sym);
+			break;
+		default:
+			print_and_return_nullptr_if_check_fail(false, "expected a 'binary'"
+				", 'unary' or identifier,  but got a %s\n", cur_token->get_cstr());
+	}
 
 	auto left_paren = get_next_token();
 	print_and_return_nullptr_if_check_fail(
@@ -85,20 +132,28 @@ prototype_t parser::parse_prototype()
 
 	//参数的格式为  0或多个identitfier token，以')'结束
 	vector<string> args;
-	auto cur_token = get_next_token();
-	for (; cur_token == TOKEN_IDENTIFIER;)
+	cur_token = &get_next_token();
+	for ( ; *cur_token == TOKEN_IDENTIFIER; )
 	{
-		args.push_back(cur_token.get_str());
-		cur_token = get_next_token();
+		args.push_back(cur_token->get_str());
+		cur_token = &get_next_token();
 	}
 
-	print_and_return_nullptr_if_check_fail(
-		cur_token == TOKEN_RIGHT_PAREN, 
-		"expected identifier or ')'  but got a %s\n",
-		cur_token.get_cstr());
+	print_and_return_nullptr_if_check_fail(*cur_token == TOKEN_RIGHT_PAREN, 
+		"expected identifier or ')' but got a %s\n", cur_token->get_cstr());
 
 	get_next_token();	//吃掉 ')'
-	return make_shared<prototype_ast>(ident_name, std::move(args));
+
+	if (args_num_limit == -1)	//没有参数个数限制是普通函数
+		return make_shared<prototype_ast>(name, std::move(args));
+	else
+	{
+		//确定参数个数和operator的要求一致
+		print_and_return_nullptr_if_check_fail((unsigned long)args_num_limit == args.size(), 
+			"expected %d args but got %ld\n", args_num_limit, args.size());
+		return make_shared<prototype_ast>(name, std::move(args), true, args_num_limit);
+	}
+
 }
 /*
 expr 是最为复杂的ast，有四种子类。从格式上来说，应满足如下要求
@@ -119,7 +174,7 @@ expr_t parser::parse_expr()
 	由于parse_binary_expr头部有同样的检查逻辑，其实这个if是不必要的。
 	为了更清晰的表达逻辑，将其留下
 */
-	if (cur_token != TOKEN_BINARY_OP)
+	if (!is_binary_operator_token(cur_token))
 		return lhs;
 	else
 	{
@@ -205,15 +260,14 @@ level1:
 	组装出a<((b*c)+d)
 	再次读取cur_token，由于cur_token已经是EOF，返回a<((b*c)+d)；
 */
-expr_t parser::parse_binary_expr(
-	int prev_op_prio, expr_t lhs)
+expr_t parser::parse_binary_expr(int prev_op_prio, expr_t lhs)
 {
 	while (1)
 	{
 		auto cur_token = get_cur_token();
 //必须要有这个检查，因为递归解析完最后一个identifier后，会while回到这里
 //这个return同时也是确保处理完binary_op后循环能退出的检查点
-		if (cur_token != TOKEN_BINARY_OP)
+		if (!is_binary_operator_token(cur_token))
 			return lhs;
 		auto cur_op_type = binary_operator_ast::get_binary_op_type(cur_token);
 		//unknown是实现错误
@@ -236,17 +290,7 @@ expr_t parser::parse_binary_expr(
 
 expr_t parser::parse_number()
 {
-	string num = get_cur_token().get_str();
-	double num_d;
-	try{
-		num_d = stod(num);
-	}
-	catch (std::exception& exp)
-	{
-		num_d = 0;
-		err_print(false, "fail to parse a number token %s, because of  \
-			exception %s, set number to 0\n", num.c_str(), exp.what());
-	}
+	double num_d = get_double_from_number_token(get_cur_token());
 	get_next_token();		//吃掉当前的number token
 	return std::make_shared<number_ast>(num_d);
 }

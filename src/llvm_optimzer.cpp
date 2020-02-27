@@ -47,8 +47,8 @@ TargetMachine * get_target_machine()
 	//原示例代码有一些小问题，例如没有初始化Options，RM传参没意义；
 	//所以从llvm的opt.cpp中抄写了下面部分，
 	const TargetOptions Options = InitTargetOptionsFromCodeGenFlags();
-
-	MCPU = "native";	//before using getCPUStr() and getFeaturesStr()
+	//before using getCPUStr() and getFeaturesStr() ，设置cpu
+	MCPU = "native";
 
 	TargetMachine * ret = tgt->createTargetMachine(native_triple, getCPUStr(), getFeaturesStr(), Options, None);
 	assert(ret != nullptr);
@@ -88,11 +88,20 @@ void llvm_optimizer::optimize_module(Module& mod , int opt_level)
 	opt_builder.registerFunctionAnalyses(FAM);
 	opt_builder.registerLoopAnalyses(LAM);
 	opt_builder.crossRegisterProxies(LAM, FAM, CGAM, MAM);
-	//llvm的优化级别从0到5是O0到O3，再加上Os和Oz
+	//llvm的优化级别分别是O0到O3，再加上Os和Oz
 	assert(0 <= opt_level && opt_level <= 5);
-	auto opt = (llvm::PassBuilder::OptimizationLevel)opt_level;
-	ModulePassManager mod_optimizer = std::move(
-		opt_builder.buildPerModuleDefaultPipeline(opt));
+	llvm::PassBuilder::OptimizationLevel opt;
+	switch(opt_level)
+	{
+		case 0: opt = llvm::PassBuilder::OptimizationLevel::O0; break;
+		case 1: opt = llvm::PassBuilder::OptimizationLevel::O1; break;
+		case 2: opt = llvm::PassBuilder::OptimizationLevel::O2; break;
+		case 3: opt = llvm::PassBuilder::OptimizationLevel::O3; break;
+		case 4: opt = llvm::PassBuilder::OptimizationLevel::Os; break;
+		case 5: opt = llvm::PassBuilder::OptimizationLevel::Oz; break;
+	}
+	ModulePassManager mod_optimizer = 
+		opt_builder.buildPerModuleDefaultPipeline(opt);
 /*
 新版本的PassManager没有提供doInitialization等方法，所以直接run
 FPM.doInitialization();
@@ -101,6 +110,7 @@ FPM.doFinalization();
 */
 
 	mod_optimizer.run(mod, MAM);
+	delete target_machine;
 	return;
 }
 
@@ -140,8 +150,10 @@ FPM.doFinalization();
 	func_optimizer.addPass(InstCombinePass());
 	func_optimizer.addPass(ReassociatePass());
 	func_optimizer.addPass(GVN());
-	func_optimizer.addPass(SimplifyCFGPass());	
+	func_optimizer.addPass(SimplifyCFGPass());
 	func_optimizer.run(func, FAM);
+
+	delete target_machine;//释放资源否则asan会报大量leak
 }
 
 

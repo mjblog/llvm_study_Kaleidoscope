@@ -5,9 +5,15 @@ cmake_minimum_required (VERSION 2.8)
 project (toy_compiler)
 
 set (CMAKE_INCLUDE_CURRENT_DIR ON)
-set (CMAKE_CXX_FLAGS "-g3 -O2 -Wall -Wextra -fno-rtti")
-set (CMAKE_CXX_FLAGS_DEBUG "-g3 -O0")
+#g++不支持使用下标方式初始化数组，find_protected_char_token用了该特性。
+#clang支持这个非标准的c++特性(c99支持的特性)，先切换到clang。
+set (CMAKE_CXX_COMPILER "/usr/bin/g++-8")
+#使用了string_view，切换到c++17
+set (CMAKE_CXX_FLAGS "-g3 -O2 -Wall -Wextra -fno-rtti -std=c++17")
+#使用asan便于排查错误
+set (CMAKE_CXX_FLAGS_DEBUG "-g3 -O0 -fsanitize=address")
 #为了加快链接速度使用lld，-L  /usr/local/lib确保能找到自行编译安装的libgtest
+#下面是重复测试的数据，第一次链接时由于磁盘IO限制，会明显更慢。
 #使用lld的数据是
 #real	0m15.891s
 #user	0m46.873s
@@ -19,7 +25,7 @@ set (CMAKE_CXX_FLAGS_DEBUG "-g3 -O0")
 
 set (CMAKE_EXE_LINKER_FLAGS "-fuse-ld=lld -L /usr/local/lib/ -pthread")
 
-set (LLVM_DIR /home/majiang/hd/opensource/llvmbuild/install/usr/local)
+set (LLVM_DIR /home/majiang/hd/opensource/llvmbuild/newllvm-for-lld/install/usr/local)
 include_directories(include SYSTEM ${LLVM_DIR}/include)
 # 加入一个配置头文件，用于处理 CMake 对源码的设置
 #configure_file (
@@ -49,7 +55,7 @@ execute_process(COMMAND ${LLVM_DIR}/bin/llvm-config --libs
                                     OUTPUT_VARIABLE LLVM_LIBS
                                     OUTPUT_STRIP_TRAILING_WHITESPACE)
 
-set (LLVM_LIBS ${LLVM_LIBS} -lz)
+set (LLVM_LIBS ${LLVM_LIBS} -lz -ltinfo)
 add_executable(toy_compiler main.cpp ${DIR_SRCS})
 target_link_libraries(toy_compiler ${LLVM_LIBS})
 

@@ -3,12 +3,20 @@
 #include <iostream>
 #include <fstream>
 #include <string>
+#include <cassert>
 #include "utils.h" /* for err_print*/
 
 namespace toy_compiler{
 
-enum token_type
-{
+/*
+反汇编发现这里的enum类型使用了long表示。
+我们在find_protected_char_token中建立了一个
+256个元素的查找表，long会浪费很多空间。
+这里用新的c++语法强制储存类型为char。
+*/
+typedef  enum : unsigned char {
+//0值设置为非法，find_protected_char_token未初始化的查找表项需要用到
+	TOKEN_UNDEFINED = 0,
 	TOKEN_DEF,
 	TOKEN_EXTERN,
 	TOKEN_IDENTIFIER,
@@ -23,11 +31,13 @@ enum token_type
 	TOKEN_COLON,
 	TOKEN_IN,
 	TOKEN_ASSIGN,
+	TOKEN_BINARY,
+	TOKEN_UNARY,
+	TOKEN_USER_DEFINED_OPERATOR,
 	TOKEN_EOF,
 	TOKEN_WRONG
-};
+} token_type_t;
 
-typedef enum token_type token_type_t;
 class token
 {
 	std::string raw_str;
@@ -38,7 +48,7 @@ class token
 public:
 	token_type_t type;
 	inline token_type_t get_type() const {return type;}
-	static inline token_type_t identifier_string_to_type (const std::string &input)
+	static inline token_type_t identifier_str_to_type(const std::string& input)
 	{
 		if (input == "def")
 			return TOKEN_DEF;
@@ -59,6 +69,10 @@ public:
 		if (input == "in")
 			return TOKEN_IN;
 
+		if (input == "binary")
+			return TOKEN_BINARY;
+		if (input == "unary")
+			return TOKEN_UNARY;
 		//关键字排除后，作为名称标识
 		return TOKEN_IDENTIFIER;
 	}
@@ -97,16 +111,13 @@ class lexer
 	{
 		return in->get(); 
 	}
+
 	static inline void skip_spaces(std::istream *in, int & cur_char)
 	{
-		if (isspace(cur_char))
-		{
-			do
-			{
-				cur_char = get_next_char(in);
-			}while (isspace(cur_char));
-		}
+		while (isspace(cur_char))
+			cur_char = get_next_char(in);
 	}
+
 	static inline void process_comments(std::istream *in, int & cur_char)
 	{
 		if (cur_char == '#')
@@ -131,7 +142,7 @@ class lexer
 				cur_str += cur_char;
 				cur_char = get_next_char(in);
 			}
-			cur_token.type = cur_token.identifier_string_to_type(cur_str);
+			cur_token.type = cur_token.identifier_str_to_type(cur_str);
 			return true;
 		}
 		else
@@ -169,63 +180,37 @@ class lexer
 		return true;
 	}
 
-	//解析特殊token，字符 '(' 、')'  、':' 、'='
-	inline bool get_special(std::istream *in, int& cur_char)
+//解析单字符token包括 ：'(' 、')'  、':' 、'=' 和 builtin的单字符操作符
+	inline bool get_protected_char(std::istream *in, int& cur_char)
 	{
-		if (cur_char == '(')
-		{
-			cur_token.get_str().clear();
-			cur_token.get_str() = "(";	//解析不需要，但是错误打印可能需要
-			cur_token.type = TOKEN_LEFT_PAREN;
-			cur_char = get_next_char(in);
-			return true;
-		}
-
-		if (cur_char == ')')
-		{
-			cur_token.get_str().clear();
-			cur_token.get_str() = ")";
-			cur_token.type = TOKEN_RIGHT_PAREN;
-			cur_char = get_next_char(in);
-			return true;
-		}
-
-		//这里如果还有组合，如::或者==时，需要分别再细化
-		if (cur_char == ':')
-		{
-			cur_token.get_str().clear();
-			cur_token.get_str() = ":";
-			cur_token.type = TOKEN_COLON;
-			cur_char = get_next_char(in);
-			return true;
-		}
-
-		if (cur_char == '=')
-		{
-			cur_token.get_str().clear();
-			cur_token.get_str() = ":";
-			cur_token.type = TOKEN_ASSIGN;
-			cur_char = get_next_char(in);
-			return true;
-		}
-
-		return false;
-	}
-
-	inline bool get_binary_op(std::istream *in, int& cur_char)
-	{
-		if (cur_char == '+' || cur_char == '-' || cur_char == '*'
-			|| cur_char == '<' )
+		token_type_t token_type = find_protected_char_token(cur_char);
+		if (token_type != TOKEN_UNDEFINED)
 		{
 			cur_token.get_str().clear();
 			cur_token.get_str() = cur_char;
-			cur_token.type = TOKEN_BINARY_OP;
+			cur_token.type = token_type;
 			cur_char = get_next_char(in);
 			return true;
 		}
 		else
 			return false;
 	}
+
+	inline bool get_user_defined_operator(std::istream *in, int& cur_char)
+	{
+		std::string& cur_str = cur_token.get_str();
+		cur_token.type = TOKEN_USER_DEFINED_OPERATOR;
+		cur_str.clear();
+		while (!isspace(cur_char))
+		{
+			cur_str += cur_char;
+			cur_char = get_next_char(in);
+		}
+
+//正确性检查放到AST去做，更容易做错误处理，这里都返回成功。
+		return true;
+	}
+
 
 	//从输入流中取数据，解析好后放入cur_token中
 	void update_cur_token()
@@ -245,14 +230,19 @@ class lexer
 			//尝试解析当前token为数字
 			if (get_number(input_stream, cur_char))
 				return;
+//如需解析多个字符的token，如==, !=, +=等
+//应放到解析单字符的get_protected_char之前
 
-			//尝试解析二元操作符
-			if (get_binary_op(input_stream, cur_char))
+			//尝试解析保留的关键char，包括 '(' 、')'  、':' 、'='和builtin的操作符
+			if (get_protected_char(input_stream, cur_char))
 				return;
 
-			//尝试解析特殊字符 '(' 、')'  、':' 、'='
-			if (get_special(input_stream, cur_char))
-				return;
+			//允许将接下来的字符解析为自定义的operator
+			if (cur_token == TOKEN_BINARY || cur_token == TOKEN_UNARY)
+			{
+				if (get_user_defined_operator(input_stream, cur_char))
+					return;
+			}
 
 			//上面模式处理可能会把cur_char更新为eof，先判断再做非法告警
 			if (cur_char != EOF)
@@ -273,40 +263,127 @@ class lexer
 	}
 
 public:
-		bool is_ok = true;
-		inline const token & get_cur_token() const {return cur_token;}
-		inline const token & get_next_token()
-		{
-			update_cur_token();
-			return cur_token;
-		}
+	bool is_ok = true;
+	inline const token & get_cur_token() const {return cur_token;}
+	inline const token & get_next_token()
+	{
+		update_cur_token();
+		return cur_token;
+	}
 
-		lexer(const std::string & filename)
+	static token_type_t find_protected_char_token(char input)
+	{
+/*
+字符判断是高频流程，使用数组性能更好。
+下面的Designated initializers特性是C99的特性，当前C++还不支持(截止c++20)，
+参考https://en.cppreference.com/w/cpp/language/aggregate_initialization。
+clang作为一个c99的扩展支持了该特性。g++直到10版本都还未支持。
+使用clang可以直接用下面的代码片段简洁地完成（尚未规避sign char可能导致的越界 ）。
+		const static token_type_t search_tab[255] = 
 		{
-			auto *fstream  = new std::ifstream;
-			fstream->open(filename, std::ios_base::in);
-			if (fstream->is_open())
-			{
-				input_stream = fstream;
-			}
+
+			['+'] = TOKEN_BINARY_OP,
+			['-'] = TOKEN_BINARY_OP,
+			['*'] = TOKEN_BINARY_OP,
+			['<'] = TOKEN_BINARY_OP,
+
+			['('] = TOKEN_LEFT_PAREN,
+			[')'] = TOKEN_RIGHT_PAREN,
+			[':'] = TOKEN_COLON,
+			['='] = TOKEN_ASSIGN
+		};
+		return search_tab[(int)input];
+
+为了使得代码兼容C++标准，下面的数组初始化通过c++标准
+支持的constexpr方式规避。示例代码如下。
+*/
+		struct stupid_wrapper
+		{
+			token_type_t search_tab[256];
+		};
+		auto stupid_constructor = [] () constexpr {
+			stupid_wrapper tmp = {
+				.search_tab = {TOKEN_UNDEFINED}
+			};
+			int add_num = 0;
+			if constexpr (std::is_signed<char>::value)
+				add_num = 128;
 			else
-			{
-				error_msg = "can not open input file" + filename;
-				is_ok = false;
-			}
-		}
-		//通常情况下应该只有测试流程会用该种初始化
-		lexer()
+				add_num = 0;
+			token_type_t* tab_start = &(tmp.search_tab[add_num]);
+			tab_start[(int)'+'] = TOKEN_BINARY_OP;
+			tab_start[(int)'-'] = TOKEN_BINARY_OP;
+			tab_start[(int)'*'] = TOKEN_BINARY_OP;
+			tab_start[(int)'<'] = TOKEN_BINARY_OP;
+
+			tab_start[(int)'('] = TOKEN_LEFT_PAREN;
+			tab_start[(int)')'] = TOKEN_RIGHT_PAREN;
+			tab_start[(int)':'] = TOKEN_COLON;
+			tab_start[(int)'='] = TOKEN_ASSIGN;
+			return tmp;
+		};
+		const static stupid_wrapper data = stupid_constructor();
+		const token_type_t* search_tab;
+		if constexpr (std::is_signed<char>::value)
+			search_tab = &(data.search_tab[128]);
+		else
+			search_tab = &(data.search_tab[0]);
+		
+		return search_tab[int(input)];
+	}
+
+	lexer(const std::string & filename)
+	{
+		auto *fstream  = new std::ifstream;
+		//必须先赋值，否则打开失败的情况下析构无法释放fstream
+		input_stream = fstream;
+		fstream->open(filename, std::ios_base::in);
+		if (!fstream->is_open())
 		{
-			input_stream = &std::cin;
+			error_msg = "can not open input file" + filename;
+			is_ok = false;
 		}
-		~lexer()
-		{
-			//依赖stream的析构close
-			if (input_stream != &std::cin && input_stream)
-				delete input_stream;
-		}
+	}
+
+	//通常情况下应该只有测试流程会用该种初始化
+	lexer()
+	{
+		input_stream = &std::cin;
+	}
+
+	~lexer()
+	{
+		//依赖stream的析构close
+		if (input_stream != &std::cin && input_stream)
+			delete input_stream;
+	}
 };
+
+static inline bool is_binary_operator_token(token &in)
+{
+	if (in == TOKEN_BINARY_OP || in == TOKEN_USER_DEFINED_OPERATOR)
+		return true;
+	else
+		return false;
+}
+
+static inline double get_double_from_number_token(const token& num_token)
+{
+	assert(num_token == TOKEN_NUMBER);
+	double num_d;
+	const std::string& num_str = num_token.get_str();
+//使用异常返回错误感觉不如c的strtod简洁明了...
+	try{
+		num_d = std::stod(num_str);
+	}
+	catch (std::exception& exp)
+	{
+		num_d = 0;
+		err_print(false, "fail to parse a number token %s, because of  \
+			exception %s, set number to 0\n", num_str.c_str(), exp.what());
+	}
+	return num_d;
+}
 
 }   // end of namespace toy_compiler
 
