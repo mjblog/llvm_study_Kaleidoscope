@@ -13,12 +13,6 @@ public:
 	prepare_parser_for_test_string(const char * input) : 
 		test_input(input), test_lexer(), test_parser(test_lexer)
 	{
-/*
-proto的查找表现在是一个static变量，一个进程内会共享。
-gtest测试时会残留上一条测试的干扰数据。
-后续将这个查找表移入parser中可解决该问题。
-*/
-		prototype_ast::get_proto_tab().clear();
 		backbuf = cin.rdbuf(test_input.rdbuf());
 		test_parser.parse();
 	}

@@ -33,7 +33,8 @@ typedef  enum : unsigned char {
 	TOKEN_ASSIGN,
 	TOKEN_BINARY,
 	TOKEN_UNARY,
-	TOKEN_USER_DEFINED_OPERATOR,
+	TOKEN_USER_DEFINED_BINARY_OPERATOR,
+	TOKEN_USER_DEFINED_UNARY_OPERATOR,
 	TOKEN_EOF,
 	TOKEN_WRONG
 } token_type_t;
@@ -199,7 +200,14 @@ class lexer
 	inline bool get_user_defined_operator(std::istream *in, int& cur_char)
 	{
 		std::string& cur_str = cur_token.get_str();
-		cur_token.type = TOKEN_USER_DEFINED_OPERATOR;
+		if (cur_token.type == TOKEN_BINARY)
+			cur_token.type = TOKEN_USER_DEFINED_BINARY_OPERATOR;
+		else
+		{
+			assert(cur_token.type == TOKEN_UNARY);
+			cur_token.type = TOKEN_USER_DEFINED_UNARY_OPERATOR;
+		}
+		
 		cur_str.clear();
 		while (!isspace(cur_char))
 		{
@@ -361,7 +369,7 @@ clang作为一个c99的扩展支持了该特性。g++直到10版本都还未支�
 
 static inline bool is_binary_operator_token(token &in)
 {
-	if (in == TOKEN_BINARY_OP || in == TOKEN_USER_DEFINED_OPERATOR)
+	if (in == TOKEN_BINARY_OP || in == TOKEN_USER_DEFINED_BINARY_OPERATOR)
 		return true;
 	else
 		return false;

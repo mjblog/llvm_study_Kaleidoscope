@@ -176,6 +176,7 @@ Value* LLVM_IR_code_generator::build_binary_op(const binary_operator_ast* bin)
 	print_and_return_nullptr_if_check_fail(rhs != nullptr,
 		"failed build lhs of binary operator\n");
 	Value* cmp;
+	Function *user_func;
 	switch (bin->get_op())
 	{
 		case BINARY_ADD:
@@ -189,6 +190,15 @@ Value* LLVM_IR_code_generator::build_binary_op(const binary_operator_ast* bin)
 			// Convert bool 0/1 to double 0.0 or 1.0
 			return ir_builder.CreateUIToFP(cmp,
 				Type::getDoubleTy(the_context), "booltmp");
+		case BINARY_USER_DEFINED:
+			/*
+			user_func = the_module->getFunction();
+			assert(F && "binary operator not found!");
+
+			Value *Ops[2] = { L, R };
+			return Builder.CreateCall(F, Ops, "binop");
+			return ir_builder.CreateCall();
+			*/
 		case BINARY_UNKNOWN:
 		default:
 			err_print(true, "unknown binary op, aborting\n");

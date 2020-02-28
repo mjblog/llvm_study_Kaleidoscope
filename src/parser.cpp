@@ -93,6 +93,7 @@ prototype有三种格式。
 	int args_num_limit = -1;	//operator需要限制入参个数
 	string op_sym;
 	double prio;
+	int op_prio;
 	switch (*cur_token)
 	{
 		case TOKEN_IDENTIFIER:
@@ -110,8 +111,10 @@ prototype有三种格式。
 			print_and_return_nullptr_if_check_fail (prio > 1 && prio < 100, 
 				"Invalid precedence %lf for operator %s, should be 1~100\n",
 					prio, get_cur_token().get_cstr());
+			//prio在1~100间再转，不会溢出
+			op_prio = prio;
 			name = prototype_ast::build_operator_external_name(2,
-																op_sym, prio);
+																op_sym, op_prio);
 			break;
 		case TOKEN_UNARY:
 			args_num_limit = 1;
@@ -141,20 +144,65 @@ prototype有三种格式。
 
 	print_and_return_nullptr_if_check_fail(*cur_token == TOKEN_RIGHT_PAREN, 
 		"expected identifier or ')' but got a %s\n", cur_token->get_cstr());
-
 	get_next_token();	//吃掉 ')'
 
+	prototype_t ret;
 	if (args_num_limit == -1)	//没有参数个数限制是普通函数
-		return make_shared<prototype_ast>(name, std::move(args));
-	else
 	{
-		//确定参数个数和operator的要求一致
-		print_and_return_nullptr_if_check_fail((unsigned long)args_num_limit == args.size(), 
-			"expected %d args but got %ld\n", args_num_limit, args.size());
-		return make_shared<prototype_ast>(name, std::move(args), true, args_num_limit);
+	/*
+	为了简单，暂时将重复定义设置为致命错误。
+	更精细的控制，应该考虑优雅地吃掉重复定义包含的所有token，
+	以使得后续的错误提示有实际意义。
+	*/
+		if (find_prototype(name) != nullptr)
+			err_print(true, "%s redefined\n", name.c_str());
+		ret = make_shared<prototype_ast>(name, std::move(args));
 	}
+	else
+	{	//operator 生成
+	/* 
+	operator的检查比较复杂。
+	为了保证定义和引用时operator优先级一致，
+	operator的name尾部植入了优先级数值。
+	重复定义检查时要先抠掉优先级，并且还需要一并
+	污染掉无优先级的名称(以表示本operator已经定义)。
+	目前这样的机制设计，仍有一种特殊情况比较模糊：
+	a中定义operatorX 优先级20,
+	b中定义operatorX 优先级10,
+	c中extern operatorX 优先级引用10；
+	如果a中的定义是一种错误，我们也无法检查出来。
+	一种比较简单的补救措施是，定义operator时同时输出
+	带优先级和不带优先级的名称，链接时可以报重复定义。
+	考虑到必要性不强，暂不实施。
+	*/
+		size_t name_len_without_prio = name.rfind('_') + 1;
+		const std::string_view op_name_without_prio(name.c_str() ,
+			name_len_without_prio);
 
+		if (find_prototype(op_name_without_prio) != nullptr)
+			err_print(true, "%s redefined\n", name.c_str());
+
+		//确定参数个数和operator的要求一致
+		print_and_return_nullptr_if_check_fail((size_t)args_num_limit == 
+			args.size(), "operator expected %d args but got %ld\n",
+			args_num_limit, args.size());
+
+		ret = make_shared<prototype_ast>(name, std::move(args), true, op_prio);
+		//污染掉不带优先级的名称，同一个operator多个优先级也不允许
+		const std::string_view name_in_tab(ret->get_name().c_str(), 
+			name_len_without_prio);
+		get_proto_tab().insert(make_pair(name_in_tab, ret.get()));
+	}
+/*
+注意这里一定要先转为string_view再make_pair，否则这里会临时构造出一个
+pair<string, prototype_t*> 再转为 pair<string_view, prototype_t*>再insert。
+这会导致get_proto_tab中的key 变成一个指向临时stack变量的string_view。
+一定注意make_pair是根据入参确定返回值的，所以要先转换好再传入。
+*/
+	get_proto_tab().insert(make_pair(string_view(ret->get_name()), ret.get()));
+	return ret;
 }
+
 /*
 expr 是最为复杂的ast，有四种子类。从格式上来说，应满足如下要求
 左操作数+(binary_operator+右操作数)*
@@ -272,7 +320,12 @@ expr_t parser::parse_binary_expr(int prev_op_prio, expr_t lhs)
 		auto cur_op_type = binary_operator_ast::get_binary_op_type(cur_token);
 		//unknown是实现错误
 		assert(cur_op_type != BINARY_UNKNOWN);
-		int cur_op_prio = binary_operator_ast::get_priority(cur_op_type);
+		int cur_op_prio;
+		if (cur_op_type != BINARY_USER_DEFINED)
+			cur_op_prio = binary_operator_ast::get_priority(cur_op_type);
+		else
+			cur_op_prio = get_user_defined_operator_prio(cur_token.get_str());
+		
 		if (cur_op_prio > prev_op_prio)
 		{
 			get_next_token();	//吃掉binary_op后解析primary
@@ -281,7 +334,7 @@ expr_t parser::parse_binary_expr(int prev_op_prio, expr_t lhs)
 				return nullptr;
 			auto new_rhs = parse_binary_expr(cur_op_prio, rhs);
 			lhs = std::make_shared<binary_operator_ast>(
-				cur_op_type, lhs, new_rhs);
+				cur_op_type, lhs, new_rhs, cur_token.get_str(), cur_op_prio);
 		}
 		else
 			return lhs;
@@ -315,7 +368,7 @@ expr_t parser::parse_identifier()
 		{
 			//吃掉右括号，然后构建call_ast返回
 			get_next_token();
-			auto find_callee = prototype_ast::find_prototype(name);
+			auto find_callee = find_prototype(name);
 			print_and_return_nullptr_if_check_fail(find_callee != nullptr, 
 				"can not find prototype for %s\n", name.c_str());
 			prototype_t callee(find_callee);
