@@ -4,6 +4,7 @@
 #include <fstream>
 #include <string>
 #include <cassert>
+#include <unordered_map>
 #include "utils.h" /* for err_print*/
 
 namespace toy_compiler{
@@ -14,7 +15,7 @@ namespace toy_compiler{
 256个元素的查找表，long会浪费很多空间。
 这里用新的c++语法强制储存类型为char。
 */
-typedef  enum : unsigned char {
+typedef  enum token_type: unsigned char {
 //0值设置为非法，find_protected_char_token未初始化的查找表项需要用到
 	TOKEN_UNDEFINED = 0,
 	TOKEN_DEF,
@@ -197,7 +198,8 @@ class lexer
 			return false;
 	}
 
-	inline bool get_user_defined_operator(std::istream *in, int& cur_char)
+	std::unordered_map<std::string, token_type_t> user_defined_op;
+	inline bool install_user_defined_operator(std::istream *in, int& cur_char)
 	{
 		std::string& cur_str = cur_token.get_str();
 		if (cur_token.type == TOKEN_BINARY)
@@ -209,16 +211,38 @@ class lexer
 		}
 		
 		cur_str.clear();
-		while (!isspace(cur_char))
+		while (!isspace(cur_char) && (cur_char != EOF))
 		{
 			cur_str += cur_char;
 			cur_char = get_next_char(in);
 		}
-
-//正确性检查放到AST去做，更容易做错误处理，这里都返回成功。
+		//可能会插入失败，这里不做检查
+		user_defined_op.insert(make_pair(cur_str, cur_token.type));
+		//正确性检查放到AST去做，更容易做错误处理，这里都返回成功。
 		return true;
 	}
 
+	bool get_user_defined_operator(std::istream *in, int& cur_char)
+	{
+		std::string& cur_str = cur_token.get_str();
+		cur_str.clear();
+		while (!isspace(cur_char) && (cur_char != EOF))
+		{
+			cur_str += cur_char;
+			cur_char = get_next_char(in);
+		}
+		auto op = user_defined_op.find(cur_str);
+		if (op != user_defined_op.cend())
+		{
+			cur_token.type = op->second;
+			return true;
+		}
+		else
+		{
+			cur_token.type = TOKEN_UNDEFINED;
+			return false;
+		}
+	}
 
 	//从输入流中取数据，解析好后放入cur_token中
 	void update_cur_token()
@@ -248,17 +272,21 @@ class lexer
 			//允许将接下来的字符解析为自定义的operator
 			if (cur_token == TOKEN_BINARY || cur_token == TOKEN_UNARY)
 			{
-				if (get_user_defined_operator(input_stream, cur_char))
+				if (install_user_defined_operator(input_stream, cur_char))
 					return;
 			}
 
-			//上面模式处理可能会把cur_char更新为eof，先判断再做非法告警
-			if (cur_char != EOF)
-			{
-				//所有合法的模式走完，报错后，吃掉当前char继续
-				err_print(/*isfatal*/false, "unknown char %c\n", cur_char);
-				cur_char = get_next_char(input_stream);
-			}
+			if (get_user_defined_operator(input_stream, cur_char))
+				return;
+
+/*
+get_user_defined_operator遇到未知的字符会把cur_token设为UNDEFINED。
+所以无需再额外处理单个的未知字符了
+*/
+			assert(cur_token == TOKEN_UNDEFINED);
+			if (cur_token.get_str().length() != 0)	//只有EOF就不要报错了
+				err_print(/*isfatal*/false, "unknown token %s\n", 
+					cur_token.get_cstr());
 		}
 /*
 到这里一定是eof了，lexer本次工作结束了。

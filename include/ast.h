@@ -223,13 +223,13 @@ class binary_operator_ast : public expr_ast
 	binary_operator_t op;
 	expr_t LHS;
 	expr_t RHS;
-//发射call的时候需要组装名称，需要原始名称和prio
-	string raw_str;
-	int prio;
+//用户自定义operator，发射call时，需要知道完整的名称
+	const string op_external_name;
 public:
 	binary_operator_ast(binary_operator_t op, expr_t LHS,
-		expr_t RHS, const string& str, int prio) : op(op), LHS(std::move(LHS)),
-			RHS(std::move(RHS)), raw_str(str), prio(prio)
+		expr_t RHS, const string& op_external_name) : 
+		op(op), LHS(std::move(LHS)), RHS(std::move(RHS)), 
+		op_external_name(std::move(op_external_name))
 	{
 		type = BINARY_OPERATOR_AST;
 	}
@@ -242,10 +242,11 @@ public:
 		assert(in_op <= BINARY_UNKNOWN);
 		return operator_priority_array[in_op];
 	}
-	int get_priority() const {return prio;}
-	inline binary_operator_t get_op() const {return op;}
-	inline const expr_t& get_lhs() const {return LHS;}
-	inline const expr_t& get_rhs() const {return RHS;}
+//	int get_priority() const {return prio;}
+	binary_operator_t get_op() const {return op;}
+	const string& get_op_external_name() const {return op_external_name;}
+	const expr_t& get_lhs() const {return LHS;}
+	const expr_t& get_rhs() const {return RHS;}
 	static binary_operator_t get_binary_op_type(token &in)
 	{
 		if (in.get_str().size() > 2 || !is_binary_operator_token(in))

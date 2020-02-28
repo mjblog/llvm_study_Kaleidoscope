@@ -93,7 +93,7 @@ prototype有三种格式。
 	int args_num_limit = -1;	//operator需要限制入参个数
 	string op_sym;
 	double prio;
-	int op_prio;
+	int op_prio = -1;
 	switch (*cur_token)
 	{
 		case TOKEN_IDENTIFIER:
@@ -164,8 +164,6 @@ prototype有三种格式。
 	operator的检查比较复杂。
 	为了保证定义和引用时operator优先级一致，
 	operator的name尾部植入了优先级数值。
-	重复定义检查时要先抠掉优先级，并且还需要一并
-	污染掉无优先级的名称(以表示本operator已经定义)。
 	目前这样的机制设计，仍有一种特殊情况比较模糊：
 	a中定义operatorX 优先级20,
 	b中定义operatorX 优先级10,
@@ -175,23 +173,18 @@ prototype有三种格式。
 	带优先级和不带优先级的名称，链接时可以报重复定义。
 	考虑到必要性不强，暂不实施。
 	*/
-		size_t name_len_without_prio = name.rfind('_') + 1;
-		const std::string_view op_name_without_prio(name.c_str() ,
-			name_len_without_prio);
-
-		if (find_prototype(op_name_without_prio) != nullptr)
-			err_print(true, "%s redefined\n", name.c_str());
-
+		//注册用户自定义运算符，并做重复定义检查
+		const auto defined = user_defined_operator_prio_tab.find(op_sym);
+		if (defined == user_defined_operator_prio_tab.cend())
+			user_defined_operator_prio_tab.insert(make_pair(op_sym, op_prio));
+		else
+			err_print(true, "binary operator %s redefined\n", op_sym.c_str());
+		
 		//确定参数个数和operator的要求一致
 		print_and_return_nullptr_if_check_fail((size_t)args_num_limit == 
 			args.size(), "operator expected %d args but got %ld\n",
 			args_num_limit, args.size());
-
 		ret = make_shared<prototype_ast>(name, std::move(args), true, op_prio);
-		//污染掉不带优先级的名称，同一个operator多个优先级也不允许
-		const std::string_view name_in_tab(ret->get_name().c_str(), 
-			name_len_without_prio);
-		get_proto_tab().insert(make_pair(name_in_tab, ret.get()));
 	}
 /*
 注意这里一定要先转为string_view再make_pair，否则这里会临时构造出一个
@@ -321,10 +314,15 @@ expr_t parser::parse_binary_expr(int prev_op_prio, expr_t lhs)
 		//unknown是实现错误
 		assert(cur_op_type != BINARY_UNKNOWN);
 		int cur_op_prio;
+		string op_external_name;
 		if (cur_op_type != BINARY_USER_DEFINED)
 			cur_op_prio = binary_operator_ast::get_priority(cur_op_type);
 		else
+		{
+			op_external_name = prototype_ast::build_operator_external_name(2,
+				cur_token.get_str(), cur_op_prio);
 			cur_op_prio = get_user_defined_operator_prio(cur_token.get_str());
+		}
 		
 		if (cur_op_prio > prev_op_prio)
 		{
@@ -334,7 +332,7 @@ expr_t parser::parse_binary_expr(int prev_op_prio, expr_t lhs)
 				return nullptr;
 			auto new_rhs = parse_binary_expr(cur_op_prio, rhs);
 			lhs = std::make_shared<binary_operator_ast>(
-				cur_op_type, lhs, new_rhs, cur_token.get_str(), cur_op_prio);
+				cur_op_type, lhs, new_rhs, op_external_name);
 		}
 		else
 			return lhs;

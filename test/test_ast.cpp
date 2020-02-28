@@ -296,5 +296,30 @@ TEST(test_ast, for_ast)
 
 TEST(test_ast, user_defined_binary_operator_ast)
 {
+	//读取string作为输入
+	prepare_parser_for_test_string tdef(
+"def binary / 30 (a b) a + b +1			"
+"def mt(x)												"
+"	x / x														");
+	auto& ast_vec = tdef.get_ast_vec();
+	//全局ast中有两个函数，还有一个被污染的不带有些优先级的binary申明
+	ASSERT_EQ(ast_vec.size(),  2);
 
+	auto first = ast_vec[0];
+	ASSERT_TRUE(first->get_type() == FUNCTION_AST);
+	function_ast* func_ptr = static_cast<function_ast *> (first.get());
+	prototype_ast* prototype_ptr = func_ptr->get_prototype().get();
+	ASSERT_TRUE(prototype_ptr->get_name() == 
+		prototype_ast::build_operator_external_name(2, "/", 30));
+
+	auto second = ast_vec[1];
+	ASSERT_TRUE(second->get_type() == FUNCTION_AST);
+	function_ast* func_ptr2 = static_cast<function_ast *> (second.get());
+	expr_ast*  body = func_ptr2->get_body().get();
+	ASSERT_TRUE(body->get_type() == BINARY_OPERATOR_AST);
+	binary_operator_ast* body_bin = static_cast<binary_operator_ast *>(body);
+
+	ASSERT_TRUE(body_bin->get_op() == BINARY_USER_DEFINED);
+	ASSERT_TRUE(body_bin->get_lhs()->get_type() == VARIABLE_AST);
+	ASSERT_TRUE(body_bin->get_rhs()->get_type() == VARIABLE_AST);
 }

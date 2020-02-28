@@ -57,6 +57,8 @@
         "ratio": "cpp",
         "mutex": "cpp",
         "thread": "cpp",
-        "*.inc": "cpp"
+        "*.inc": "cpp",
+        "shared_mutex": "cpp",
+        "unordered_set": "cpp"
     }
 }

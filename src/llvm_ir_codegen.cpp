@@ -177,6 +177,7 @@ Value* LLVM_IR_code_generator::build_binary_op(const binary_operator_ast* bin)
 		"failed build lhs of binary operator\n");
 	Value* cmp;
 	Function *user_func;
+	const string* op_external_name;
 	switch (bin->get_op())
 	{
 		case BINARY_ADD:
@@ -191,14 +192,14 @@ Value* LLVM_IR_code_generator::build_binary_op(const binary_operator_ast* bin)
 			return ir_builder.CreateUIToFP(cmp,
 				Type::getDoubleTy(the_context), "booltmp");
 		case BINARY_USER_DEFINED:
-			/*
-			user_func = the_module->getFunction();
-			assert(F && "binary operator not found!");
+			op_external_name = &(bin->get_op_external_name());
+			user_func = the_module->getFunction(*op_external_name);
+			if (user_func == nullptr)
+				err_print(true, "can not find prototype of binary operator %s,"
+				"aborting\n", op_external_name->c_str()); 
 
-			Value *Ops[2] = { L, R };
-			return Builder.CreateCall(F, Ops, "binop");
-			return ir_builder.CreateCall();
-			*/
+			return ir_builder.CreateCall(user_func, {lhs, rhs}, 
+				op_external_name->c_str());
 		case BINARY_UNKNOWN:
 		default:
 			err_print(true, "unknown binary op, aborting\n");
