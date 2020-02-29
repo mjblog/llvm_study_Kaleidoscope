@@ -205,12 +205,12 @@ number 数值；identifier 变量；identifier() call调用；(expr) 括号包�
 expr_t parser::parse_expr()
 {
 //parse_primary处理所有可能为操作数的情况
-	auto lhs = parse_primary_expr();
+	auto lhs = parse_unary_expr();
 	if (lhs == nullptr)
 		return nullptr;
 
 //如果解析完后没有二元操作符，就直接返回了
-	token cur_token = get_cur_token();
+	const auto& cur_token = get_cur_token();
 /* 
 	由于parse_binary_expr头部有同样的检查逻辑，其实这个if是不必要的。
 	为了更清晰的表达逻辑，将其留下
@@ -226,7 +226,7 @@ expr_t parser::parse_expr()
 //number 数值；identifier 变量；identifier() call调用；(expr) 括号包裹的表达式
 expr_t parser::parse_primary_expr()
 {
-	auto cur_token = get_cur_token();
+	const auto& cur_token = get_cur_token();
 	switch (cur_token.get_type())
 	{
 		case TOKEN_NUMBER:
@@ -247,6 +247,25 @@ expr_t parser::parse_primary_expr()
 	}
 
 	assert(false);
+}
+
+expr_t parser::parse_unary_expr()
+{
+	const auto& cur_token = get_cur_token();
+	if (cur_token != TOKEN_USER_DEFINED_UNARY_OPERATOR)
+		return parse_primary_expr();
+	else
+	{
+		const string opcode = cur_token.get_str();
+		get_next_token();	//吃掉当前的unary
+		auto operand = parse_unary_expr();
+		print_and_return_nullptr_if_check_fail(operand != nullptr, "failed to "
+			"get the operand of unary %s\n", opcode.c_str());
+		const auto& name = prototype_ast::build_operator_external_name(1,
+			opcode);
+		return make_shared<unary_operator_ast>(opcode,
+			std::move(operand), std::move(name));
+	}
 }
 
 /*
@@ -326,8 +345,8 @@ expr_t parser::parse_binary_expr(int prev_op_prio, expr_t lhs)
 		
 		if (cur_op_prio > prev_op_prio)
 		{
-			get_next_token();	//吃掉binary_op后解析primary
-			auto rhs = parse_primary_expr();
+			get_next_token();	//吃掉binary_op后解析所有可能为数值的情况
+			auto rhs = parse_unary_expr();
 			if (rhs == nullptr)
 				return nullptr;
 			auto new_rhs = parse_binary_expr(cur_op_prio, rhs);

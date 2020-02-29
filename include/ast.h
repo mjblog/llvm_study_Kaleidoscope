@@ -37,6 +37,7 @@ typedef enum ast_type
 	NUMBER_AST,
 	VARIABLE_AST,
 	BINARY_OPERATOR_AST,
+	UNARY_OPERATOR_AST,
 	CALL_AST,
 	IF_AST,
 	FOR_AST,
@@ -139,13 +140,13 @@ public:
 			&& lexer::find_protected_char_token(sym[0]) != TOKEN_UNDEFINED)
 		{
 			err_print(is_fatal, "%s is a protected char, "
-				" shoud not be redefined\n", sym.c_str());
+				"which shoud not be redefined\n", sym.c_str());
 			is_wrong = true;
 		}
 
 		//不支持使用数字或者字符，避免与函数调用混淆
 		if (isalnum(sym[0]) || 
-			(sym.length() ==2 && isalnum(sym[1])))
+			(sym.length() == 2 && isalnum(sym[1])))
 		{
 			err_print(is_fatal, "operator %s should not contain alphabetic"
 				"character or digit\n", sym.c_str());
@@ -273,6 +274,36 @@ public:
 		
 		return BINARY_UNKNOWN;
 	}
+};
+
+
+/*
+一元操作符被视为所有立即数值的前缀。
+加入unary的概念后，用 "unary + primary_expr"来替代
+单独的primary_expr，表达所有立即产生数值的表达式。
+*/
+class unary_operator_ast : public expr_ast
+{
+/*
+按说unary也应该参考binary设置type类型。
+但是由于我们没有内置unary，所以为了简单直接使用string
+*/
+	string opcode;
+	expr_t operand;
+//用户自定义operator，发射call时，需要知道完整的名称
+	string op_external_name;
+public:
+	unary_operator_ast(const string& opcode, expr_t operand, 
+		const string& op_external_name) : opcode(opcode), 
+		operand(std::move(operand)), op_external_name(std::move(op_external_name))
+	{
+		type = UNARY_OPERATOR_AST;
+	}
+
+	const string& get_opcode() const {return opcode;}
+	const expr_t& get_operand() const {return operand;}
+	const string& get_op_external_name() const {return op_external_name;}
+
 };
 
 class call_ast : public expr_ast

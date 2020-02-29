@@ -42,7 +42,7 @@ class parser final
 */
 //	expr_t parser::parse_binary_op_rhs(int prev_op_prio);
 	expr_t parse_binary_expr(int prev_op_prio, expr_t lhs);
-
+	expr_t parse_unary_expr();
 public:
 	parser(lexer& in_lexer) : linked_lexer(in_lexer) {}
 	void parse();
