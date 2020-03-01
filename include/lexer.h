@@ -405,6 +405,14 @@ static inline bool is_binary_operator_token(const token &in)
 		return false;
 }
 
+static inline bool is_unary_operator_token(const token &in)
+{
+	if (in == TOKEN_USER_DEFINED_UNARY_OPERATOR)
+		return true;
+	else
+		return false;
+}
+
 static inline double get_double_from_number_token(const token& num_token)
 {
 	assert(num_token == TOKEN_NUMBER);

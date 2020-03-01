@@ -252,7 +252,8 @@ expr_t parser::parse_primary_expr()
 expr_t parser::parse_unary_expr()
 {
 	const auto& cur_token = get_cur_token();
-	if (cur_token != TOKEN_USER_DEFINED_UNARY_OPERATOR)
+	//这里最终应该是
+	if (!is_unary_operator_token(cur_token))
 		return parse_primary_expr();
 	else
 	{
@@ -332,15 +333,15 @@ expr_t parser::parse_binary_expr(int prev_op_prio, expr_t lhs)
 		auto cur_op_type = binary_operator_ast::get_binary_op_type(cur_token);
 		//unknown是实现错误
 		assert(cur_op_type != BINARY_UNKNOWN);
-		int cur_op_prio;
+		int cur_op_prio = -1;
 		string op_external_name;
 		if (cur_op_type != BINARY_USER_DEFINED)
 			cur_op_prio = binary_operator_ast::get_priority(cur_op_type);
 		else
 		{
+			cur_op_prio = get_user_defined_operator_prio(cur_token.get_str());
 			op_external_name = prototype_ast::build_operator_external_name(2,
 				cur_token.get_str(), cur_op_prio);
-			cur_op_prio = get_user_defined_operator_prio(cur_token.get_str());
 		}
 		
 		if (cur_op_prio > prev_op_prio)

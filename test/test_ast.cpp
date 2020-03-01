@@ -359,3 +359,28 @@ TEST(test_ast, user_defined_unary_operator_ast)
 	ASSERT_EQ(unary->get_op_external_name(),
 		prototype_ast::build_operator_external_name(1, "!"));
 }
+
+TEST(test_ast, user_defined_unary_operator_ast_unimplemented)
+{
+/*
+为了阻止用户定义可能产生错误或者二义性的operator
+我们在parser中对operator的名称做了检查，
+语言征用的特殊字符如 ':' '=' '(' ')'不允许被自定义。
+语言已经内置的运算符+-<*不允许被自定义。
+原示例中的unary-暂时无法实现。
+当然单就'-'来说，还有其他问题需要处理。
+lexer中目前直接把内置'-'标记为了BINARY_TOKEN。
+还需要专门设计一套机制用于表达这种同时可以有BINARY和UNARY语义的情况。
+例如lexer不直接标记BINARY_TOKEN或者UNARY_TOKEN，而是提供
+is_binary_op、is_unary_op等函数。
+*/
+	ASSERT_DEATH(
+{
+	prepare_parser_for_test_string tdef(
+"def unary - (a)  0 - a 		"
+"def mt(x)													"
+"	x + -x														");
+}, 
+	"- is a protected char, which shoud not be redefined"
+	);
+}

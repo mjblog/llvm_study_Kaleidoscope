@@ -111,6 +111,8 @@ Value* LLVM_IR_code_generator::build_expr(const expr_ast* expr)
 			return build_variable((const variable_ast*) expr);
 		case BINARY_OPERATOR_AST:
 			return build_binary_op((const binary_operator_ast *)expr);
+		case UNARY_OPERATOR_AST:
+			return build_unary_op((const unary_operator_ast *)expr);
 		case IF_AST:
 			return build_if((const if_ast *)expr);
 		case FOR_AST:
@@ -194,6 +196,7 @@ Value* LLVM_IR_code_generator::build_binary_op(const binary_operator_ast* bin)
 		case BINARY_USER_DEFINED:
 			op_external_name = &(bin->get_op_external_name());
 			user_func = the_module->getFunction(*op_external_name);
+			//parser就应该发现未定义的问题，这里再未定义应该是致命异常
 			if (user_func == nullptr)
 				err_print(true, "can not find prototype of binary operator %s,"
 				"aborting\n", op_external_name->c_str()); 
@@ -204,6 +207,26 @@ Value* LLVM_IR_code_generator::build_binary_op(const binary_operator_ast* bin)
 		default:
 			err_print(true, "unknown binary op, aborting\n");
 	}
+}
+
+
+Value* LLVM_IR_code_generator::build_unary_op(const unary_operator_ast* unary)
+{
+	//目前都是自定义的uanry，暂时不做通用的流程
+	auto operand = build_expr(unary->get_operand().get());
+	print_and_return_nullptr_if_check_fail(operand != nullptr,
+		"failed build operand of unary operator\n");
+
+	const string& op_external_name = unary->get_op_external_name();
+	Function* user_func = the_module->getFunction(op_external_name);
+
+	//parser就应该发现未定义的问题，这里再未定义应该是致命异常
+	if (user_func == nullptr)
+		err_print(true, "can not find prototype of unary operator %s,"
+			"aborting\n", op_external_name.c_str()); 
+
+	return ir_builder.CreateCall(user_func, {operand},
+		op_external_name.c_str());
 }
 
 
