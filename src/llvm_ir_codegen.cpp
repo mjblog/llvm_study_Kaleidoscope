@@ -188,6 +188,26 @@ Value* LLVM_IR_code_generator::build_variable(const variable_ast* var)
 
 Value* LLVM_IR_code_generator::build_binary_op(const binary_operator_ast* bin)
 {
+	if (bin->get_op() == BINARY_ASSIGN)
+	{
+		// 确保lhs变量存在.
+		auto dest_var = (variable_ast *)bin->get_lhs().get();
+		const auto& dest_var_name = dest_var->get_name();
+		const auto& search_result = named_var.find(dest_var_name);
+		print_and_return_nullptr_if_check_fail(
+			search_result != named_var.cend(),
+			"unknown variable name %s\n", dest_var_name.c_str());
+		//生成rhs的值
+		Value *val = build_expr(bin->get_rhs().get());
+		print_and_return_nullptr_if_check_fail(val != nullptr, 
+			"failed to build value for %s =\n", dest_var_name.c_str());
+		//写入rhs的值到lhs的变量中
+		ir_builder.CreateStore(val, search_result->second);
+		//返回rhs的值作为=表达式的返回值，以支持a=(b=c)这样的赋值
+		return val;
+	}
+
+//除开=外的binary公用发射模式
 	auto lhs = build_expr(bin->get_lhs().get());
 	print_and_return_nullptr_if_check_fail(lhs != nullptr,
 		"failed build lhs of binary operator\n");

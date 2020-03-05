@@ -351,6 +351,14 @@ expr_t parser::parse_binary_expr(int prev_op_prio, expr_t lhs)
 			if (rhs == nullptr)
 				return nullptr;
 			auto new_rhs = parse_binary_expr(cur_op_prio, rhs);
+			//赋值操作需要确保其lhs为变量
+			if (cur_op_type == BINARY_ASSIGN)
+			{
+				print_and_return_nullptr_if_check_fail(
+					lhs->get_type() == VARIABLE_AST,
+					"destination of '=' must be a variable\n");
+			}
+
 			lhs = std::make_shared<binary_operator_ast>(
 				cur_op_type, lhs, new_rhs, op_external_name);
 		}
