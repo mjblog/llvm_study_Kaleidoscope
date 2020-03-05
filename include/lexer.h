@@ -211,8 +211,8 @@ class lexer
 		}
 		
 		cur_str.clear();
-		//遇到identifier或者number需要停止，以便支持!x这样的写法
-		while (!isalnum(cur_char) && !isspace(cur_char) && (cur_char != EOF))
+//要求binary和unary定义完成后一定要以空格分割。这是合理的要求。
+		while (!isspace(cur_char) && (cur_char != EOF))
 		{
 			cur_str += cur_char;
 			cur_char = get_next_char(in);
@@ -227,7 +227,7 @@ class lexer
 	{
 		std::string& cur_str = cur_token.get_str();
 		cur_str.clear();
-		
+		//遇到identifier或者number需要停止，以便支持!x这样的写法
 		while (!isalnum(cur_char) && !isspace(cur_char) && (cur_char != EOF))
 		{
 			cur_str += cur_char;

@@ -29,12 +29,15 @@ bool LLVM_IR_code_generator::gen_function(const function_ast* func)
 		return false;
 	}
 
+
+
 /*
 前移两个指针定义到这里，规避goto err_exit引起的告警
 transfer of control bypasses initialization of:
 */
 	BasicBlock *bb;
 	Value* ret_val;
+
 	//2 生成prototype
 	if (!gen_prototype(proto_ptr))
 	{
@@ -46,15 +49,27 @@ transfer of control bypasses initialization of:
 	//gen_prototype会创建llvm中的函数声明
 	cur_func = the_module->getFunction(func_name);
 	assert(cur_func != nullptr);
+
+/*
+做其他动作前，创建函数的entry block，设置好插入点。
+确保后面的动作能正确在entry block中分配临时变量的alloca
+注意这个创建entry_block的动作不能前提到gen_prototype之前，
+因为cur_func对应的Function结构是在gen_prototype中创建的。
+*/
+	bb = BasicBlock::Create(the_context, "entry", cur_func);
+	ir_builder.SetInsertPoint(bb);
+
 	//创建args查找map，方便后续variable引用
 	named_var.clear();
 	for (auto &arg : cur_func->args())
-		named_var[arg.getName().str()] = &arg;
+	{
+		const string& arg_name = arg.getName().str();
+		auto arg_alloca = create_alloca_at_func_entry(cur_func, arg_name);
+		ir_builder.CreateStore(&arg, arg_alloca);
+		named_var[arg_name] = arg_alloca;
+	}
 
 	//3 生成body
-	//设置好插入点，调用build_expr函数获得expr的返回值，构建返回指令
-	bb = BasicBlock::Create(the_context, "entry", cur_func);
-	ir_builder.SetInsertPoint(bb);
 	//build_expr中会调用ir_builder插入计算expr结果的运算指令
 	ret_val = build_expr(func->get_body().get());
 	if (ret_val == nullptr)
@@ -160,13 +175,17 @@ Value* LLVM_IR_code_generator::build_number(const number_ast* num)
 //当前还未支持局部变量定义和全局变量定义，实际上variable就只有入参
 Value* LLVM_IR_code_generator::build_variable(const variable_ast* var)
 {
-	// named_var 在gen_prorotype时准备好
+/*
+ named_var 中记录了当前可引用的全部变量。
+ 为了支持可改写的变量，并保持一致性，所有的变量在初始生成时
+ 都改为放到stack中去分配。后续会用llvm 的mem2reg优化重新转回寄存器。
+ */
 	const string& var_name = var->get_name();
 	Value *V = named_var[var_name];
 	print_and_return_nullptr_if_check_fail(V != nullptr, 
 		"Unknown variable name %s\n", var_name.c_str());
-
-	return V;
+	//改为栈分配后，所有栈变量都以其所在的地址表示。返回值需要load一次。
+	return ir_builder.CreateLoad(V, var_name.c_str());
 }
 
 Value* LLVM_IR_code_generator::build_binary_op(const binary_operator_ast* bin)
@@ -425,6 +444,17 @@ Value* LLVM_IR_code_generator::build_for(const for_ast* for_expr)
 	Value* start_val = build_expr(for_expr->get_start().get());
 	print_and_return_nullptr_if_check_fail(start_val != nullptr, 
 		"can not build start value in for_expr\n");
+	/* 
+	induction var(指示变量)有两个可能的值：
+	第一次进入时是start value；
+	多次循环时，其值由本次循环体执行完后指示变量名指向的value给出
+	在采用stack地址来表达变量后，无需再用PHI节点表达这两种可能性了。
+	因为地址中存放的值本来就是可以有多种的，只需要在用的时候存取就可以了。
+	*/
+	const string& idt_name = for_expr->get_idt_name();
+	AllocaInst * idt_var = create_alloca_at_func_entry(cur_func, idt_name);
+	ir_builder.CreateStore(idt_var, start_val);
+
 /*
 创建各个基础框架bb，他们的作用分区和作用如下 ： 
 preheader_bb:
@@ -445,7 +475,7 @@ loop:
 after_loop:
 	xxxx后续指令
 */
-	BasicBlock* preheader_bb = ir_builder.GetInsertBlock();
+//	BasicBlock* preheader_bb = ir_builder.GetInsertBlock(); 无PHI不再需要
 	BasicBlock* end_check_bb =
 		BasicBlock::Create(the_context, "end_check", cur_func);
 //参考if的做法，为保持bblist中的顺序一致性，下面两个bb创建后不插入func。
@@ -458,25 +488,15 @@ after_loop:
 //现在开始构建循环结束判断bb：
 	ir_builder.SetInsertPoint(end_check_bb);
 
-	/* 
-	induction var(指示变量)有两个可能的值：
-	第一次进入时是start value；
-	多次循环时，其值由本次循环体执行完后指示变量名指向的value给出
-	所以需要用PHI节点来表示指示变量。
-	这里先设置第一种情况
-	*/
-	const string& idt_name = for_expr->get_idt_name();
-	PHINode* idt_var = ir_builder.CreatePHI(Type::getDoubleTy(the_context),
-										2, idt_name);
-	idt_var->addIncoming(start_val, preheader_bb);
-
 	/*
 	发射完start计算后，后续流程再引用idt_name这个名称，就应该
-	去读取PHI的值。	如果有重名的情况，当前for中的变量名生效。
-	但是离开当前for的作用域后，需要还原原来的变量value，
-	所以需要save一下。
+	去读取for中的定义。	但是离开当前for的作用域后，
+	需要还原原来的变量value，所以需要save一下。
 	*/
-	Value* old_val = named_var[idt_name];
+	AllocaInst* old_val = nullptr;
+	if (auto it = named_var.find(idt_name); it != named_var.end())
+		old_val = it->second;
+	//从这里开始idt_name这个名称指向for中的定义
 	named_var[idt_name] = idt_var;
 
 	// Compute the end condition.
@@ -494,7 +514,7 @@ after_loop:
 	cur_func->getBasicBlockList().push_back(loop_bb);
 	ir_builder.SetInsertPoint(loop_bb);
 
-	//for body的value没有被定义，只要不为空表示没有错误就可以
+	//for body的value没有被语言定义，只要不为空表示没有错误就可以
 	Value* body = build_expr(for_expr->get_body().get());
 	print_and_return_nullptr_if_check_fail(body != nullptr, 
 		"can not build bodyin for_exp\n");
@@ -510,23 +530,36 @@ after_loop:
 	else 
 		step_val = ConstantFP::get(the_context, APFloat(1.0));
 
-	Value* next_idt_val = ir_builder.CreateFAdd(idt_var, step_val, "nextvar");
+	//使用stack来记录和更新idt变量
+	Value* idt_var_val = ir_builder.CreateLoad(idt_var);
+	Value* next_idt_val = ir_builder.CreateFAdd(idt_var_val, step_val, "nextvar");
+	ir_builder.CreateStore(next_idt_val, idt_var);
+
 	ir_builder.CreateBr(end_check_bb);
-	//设置示变量(PHI节点)的另外一个入口和值
-	idt_var->addIncoming(next_idt_val, loop_bb);
 
 //设置插入点到after_loop_bb，后续指令发射就到循环后面了
 	cur_func->getBasicBlockList().push_back(after_loop_bb);
 	ir_builder.SetInsertPoint(after_loop_bb);
 
 	// Restore the unshadowed variable.
-	if (old_val)
+	if (old_val != nullptr)
 		named_var[idt_name] = old_val;
 	else
 		named_var.erase(idt_name);
 
 	// for expr always returns 0.0.
 	return Constant::getNullValue(Type::getDoubleTy(the_context));
+}
+
+/// CreateEntryBlockAlloca - Create an alloca instruction in the entry block of
+/// the function.  This is used for mutable variables etc.
+AllocaInst* LLVM_IR_code_generator::create_alloca_at_func_entry(Function* func,
+                                          const std::string& var_name)
+{
+	IRBuilder<> tmp_builder (&func->getEntryBlock(),
+		func->getEntryBlock().begin());
+	return tmp_builder.CreateAlloca(Type::getDoubleTy(the_context), 0,
+		var_name.c_str());
 }
 
 void LLVM_IR_code_generator::print_IR()
