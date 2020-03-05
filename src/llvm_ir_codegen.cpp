@@ -29,8 +29,6 @@ bool LLVM_IR_code_generator::gen_function(const function_ast* func)
 		return false;
 	}
 
-
-
 /*
 前移两个指针定义到这里，规避goto err_exit引起的告警
 transfer of control bypasses initialization of:

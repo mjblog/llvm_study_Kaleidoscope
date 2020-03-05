@@ -108,9 +108,9 @@ prototype有三种格式。
 */
 			prototype_ast::verify_operator_sym(op_sym);
 			prio = get_double_from_number_token(get_next_token());
-			print_and_return_nullptr_if_check_fail (prio > 1 && prio < 100, 
-				"Invalid precedence %lf for operator %s, should be 1~100\n",
-					prio, get_cur_token().get_cstr());
+			print_and_return_nullptr_if_check_fail (prio >= 1 && prio < 100, 
+				"Invalid precedence %lf for binary operator %s, should be 1~100\n",
+					prio, op_sym.c_str());
 			//prio在1~100间再转，不会溢出
 			op_prio = prio;
 			name = prototype_ast::build_operator_external_name(2,
