@@ -120,7 +120,7 @@ class lexer
 			cur_char = get_next_char(in);
 	}
 
-	static inline void process_comments(std::istream *in, int & cur_char)
+	static bool process_comments(std::istream *in, int & cur_char)
 	{
 		if (cur_char == '#')
 		{
@@ -128,7 +128,9 @@ class lexer
 			{
 				cur_char = get_next_char(in);
 			}while (cur_char != EOF && cur_char != '\r' && cur_char != '\n' );
+			return true;
 		}
+		return false;
 	}
 
 	inline bool get_identifier(std::istream *in, int & cur_char)
@@ -223,27 +225,43 @@ class lexer
 		return true;
 	}
 
+/*
+该函数的工作逻辑：
+1 从instream中抽取字符直到遇到终止信号：字符、数字或者(
+2 根据抽取出的string_op，查询user_defined_op是否存在定义
+3 如果存在定义，就更新cur_token后返回true
+4 如果不存在定义，将string_op尾部的char放回instream中，然后回到2
+5 如果string_op已经为空，返回false
+*/
 	bool get_user_defined_operator(std::istream *in, int& cur_char)
 	{
-		std::string& cur_str = cur_token.get_str();
-		cur_str.clear();
-		//遇到identifier或者number需要停止，以便支持!x这样的写法
-		while (!isalnum(cur_char) && !isspace(cur_char) && (cur_char != EOF))
+		std::string op_str;
+		//遇到identifier、number、'('也需要停止，以便支持!x这样的写法
+		while (!isalnum(cur_char) && !isspace(cur_char) 
+			&& (cur_char != EOF) && cur_char != '(')
 		{
-			cur_str += cur_char;
+			op_str += cur_char;
 			cur_char = get_next_char(in);
 		}
-		auto op = user_defined_op.find(cur_str);
-		if (op != user_defined_op.cend())
+
+		while(op_str.size())
 		{
-			cur_token.type = op->second;
-			return true;
+			auto op = user_defined_op.find(op_str);
+			if (op != user_defined_op.cend())
+			{
+				cur_token.type = op->second;
+				cur_token.get_str() = op_str;
+				return true;
+			}
+			else
+			{
+				//注意cur_char相当于insteam的单字节缓冲，需要一并更新
+				in->putback(cur_char);
+				cur_char = op_str.back();
+				op_str.pop_back();
+			}
 		}
-		else
-		{
-			cur_token.type = TOKEN_UNDEFINED;
-			return false;
-		}
+		return false;
 	}
 
 	//从输入流中取数据，解析好后放入cur_token中
@@ -256,22 +274,23 @@ class lexer
 		static int cur_char = ' ';
 		while (cur_char != EOF)
 		{
-			process_comments(input_stream, cur_char);
 			skip_spaces(input_stream, cur_char);
+			//吃掉注释后，需要从新的行开始，吃掉可能存在的空白字符
+			if (process_comments(input_stream, cur_char))
+				continue;
+//下面的解析顺序总体上需要遵从先长后短的规则
+//这样当单个字符产生冲突时，长串才能获得正确的结果。
+//如 = 和 != 需要先识别两字符的!=模式
+
 			//尝试解析当前token为关键字或者变量
 			if (get_identifier(input_stream, cur_char))
 				return;
 			//尝试解析当前token为数字
 			if (get_number(input_stream, cur_char))
 				return;
-//如需解析多个字符的token，如==, !=, +=等
-//应放到解析单字符的get_protected_char之前
 
-			//尝试解析保留的关键char，包括 '(' 、')'  、':' 、'='和builtin的操作符
-			if (get_protected_char(input_stream, cur_char))
-				return;
-
-			//允许将接下来的字符解析为自定义的operator
+//operator可能为2字符，如==, !=, +=等。所以先于protected_char解析
+			//允许将binary/unary关键字后的字符解析为自定义的operator
 			if (cur_token == TOKEN_BINARY || cur_token == TOKEN_UNARY)
 			{
 				if (install_user_defined_operator(input_stream, cur_char))
@@ -281,14 +300,17 @@ class lexer
 			if (get_user_defined_operator(input_stream, cur_char))
 				return;
 
-/*
-get_user_defined_operator遇到未知的字符会把cur_token设为UNDEFINED。
-所以无需再额外处理单个的未知字符了
-*/
-			assert(cur_token == TOKEN_UNDEFINED);
-			if (cur_token.get_str().length() != 0)	//只有EOF就不要报错了
-				err_print(/*isfatal*/false, "unknown token %s\n", 
-					cur_token.get_cstr());
+			//尝试解析保留的关键char，包括 '(' 、')'  、':' 、'='和builtin的操作符
+			if (get_protected_char(input_stream, cur_char))
+				return;
+
+			//上面模式处理可能会把cur_char更新为eof，先判断再做非法告警
+			if (cur_char != EOF)
+			{
+				//所有合法的模式走完，报错后，吃掉当前char继续
+				err_print(/*isfatal*/false, "unknown char %c\n", cur_char);
+				cur_char = get_next_char(input_stream);
+			}
 		}
 /*
 到这里一定是eof了，lexer本次工作结束了。
