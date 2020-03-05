@@ -31,7 +31,6 @@ typedef  enum token_type: unsigned char {
 	TOKEN_FOR,
 	TOKEN_COLON,
 	TOKEN_IN,
-	TOKEN_ASSIGN,
 	TOKEN_BINARY,
 	TOKEN_UNARY,
 	TOKEN_USER_DEFINED_BINARY_OPERATOR,
@@ -375,11 +374,12 @@ clang作为一个c99的扩展支持了该特性。g++直到10版本都还未支�
 			tab_start[(int)'-'] = TOKEN_BINARY_OP;
 			tab_start[(int)'*'] = TOKEN_BINARY_OP;
 			tab_start[(int)'<'] = TOKEN_BINARY_OP;
+			tab_start[(int)'='] = TOKEN_BINARY_OP;
 
 			tab_start[(int)'('] = TOKEN_LEFT_PAREN;
 			tab_start[(int)')'] = TOKEN_RIGHT_PAREN;
 			tab_start[(int)':'] = TOKEN_COLON;
-			tab_start[(int)'='] = TOKEN_ASSIGN;
+
 			return tmp;
 		};
 		const static stupid_wrapper data = stupid_constructor();

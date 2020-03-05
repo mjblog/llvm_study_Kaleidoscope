@@ -482,8 +482,9 @@ expr_t parser::parse_for()
 	get_next_token();									//吃掉变量名token
 
 	cur_token = &(get_cur_token());		//变量名后是=
-	print_and_return_nullptr_if_check_fail(*cur_token == TOKEN_ASSIGN, 
-		"expected a '=' token but got %s\n", cur_token->get_cstr());
+	print_and_return_nullptr_if_check_fail(*cur_token == TOKEN_BINARY_OP 
+		&& cur_token->get_str()=="=", "expected a '=' token but got %s\n",
+		cur_token->get_cstr());
 
 	get_next_token();									//吃掉=，后面是循环变量start值
 	expr_t start  = parse_expr();

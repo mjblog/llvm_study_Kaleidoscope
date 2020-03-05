@@ -215,6 +215,7 @@ enum binary_operator_type : unsigned char
 	BINARY_SUB,
 	BINARY_MUL,
 	BINARY_LESS_THAN,
+	BINARY_ASSIGN,
 	BINARY_USER_DEFINED,		//用户自定义扩展的操作符
 	BINARY_UNKNOWN
 };
@@ -239,7 +240,7 @@ public:
 	{
 		//确保这里的优先级数值与binary_operator_type保持一致
 		static const int16_t operator_priority_array[BINARY_UNKNOWN + 1] = 
-			{20, 20, 30, 10, -1, -1};
+			{20, 20, 40, 10, 2, -1, -1};
 		assert(in_op <= BINARY_UNKNOWN);
 		return operator_priority_array[in_op];
 	}
@@ -265,6 +266,8 @@ public:
 					return BINARY_MUL;
 				case '<':
 					return BINARY_LESS_THAN;
+				case '=':
+					return BINARY_ASSIGN;
 			}
 			return BINARY_UNKNOWN;
 		}
