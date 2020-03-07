@@ -27,6 +27,7 @@ public:
 	virtual VAL_PTR build_unary_op(const unary_operator_ast* unary) = 0;
 	virtual VAL_PTR build_if(const if_ast* if_expr) = 0;
 	virtual VAL_PTR build_for(const for_ast* for_expr) = 0;
+	virtual VAL_PTR build_var(const var_ast* var_expr) = 0;
 	virtual bool codegen(const ast_vector_t& global_vec) 
 	{
 		for (auto ast : global_vec)

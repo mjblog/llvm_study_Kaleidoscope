@@ -14,7 +14,8 @@ TEST(test_llvm_codegen, codegen_def)
     const auto& ast_vec = tdef.get_ast_vec();
     LLVM_IR_code_generator code_generator;
     ASSERT_TRUE(code_generator.codegen(ast_vec));
-    code_generator.print_IR();
+    string tmpout;
+    code_generator.print_IR_to_str(tmpout);
 	ASSERT_TRUE(1);
 }
 
@@ -26,7 +27,8 @@ TEST(test_llvm_codegen, codegen_extern)
     const auto& ast_vec = tdef.get_ast_vec();
     LLVM_IR_code_generator code_generator;
     ASSERT_TRUE(code_generator.codegen(ast_vec));
-    code_generator.print_IR();
+    string tmpout;
+    code_generator.print_IR_to_str(tmpout);
 	ASSERT_TRUE(1);
 }
 
@@ -39,10 +41,11 @@ TEST(test_llvm_codegen, codegen_user_defined_op1)
 "def mt(x)													"
 "	x + !x														");
 	//全局ast中现在只有这个函数
-    const auto& ast_vec = tdef.get_ast_vec();
-    LLVM_IR_code_generator code_generator;
-    ASSERT_TRUE(code_generator.codegen(ast_vec));
-    code_generator.print_IR();
+	const auto& ast_vec = tdef.get_ast_vec();
+	LLVM_IR_code_generator code_generator;
+	ASSERT_TRUE(code_generator.codegen(ast_vec));
+	string tmpout;
+	code_generator.print_IR_to_str(tmpout);
 	ASSERT_TRUE(1);
 }
 
@@ -54,10 +57,32 @@ TEST(test_llvm_codegen, codegen_user_defined_op2)
 "def mt(x)												"
 "	x / x														");
 	//全局ast中现在只有这个函数
-    const auto& ast_vec = tdef.get_ast_vec();
-    LLVM_IR_code_generator code_generator;
-    ASSERT_TRUE(code_generator.codegen(ast_vec));
-    code_generator.print_IR();
+	const auto& ast_vec = tdef.get_ast_vec();
+	LLVM_IR_code_generator code_generator;
+	ASSERT_TRUE(code_generator.codegen(ast_vec));
+	string tmpout;
+	code_generator.print_IR_to_str(tmpout);
 	ASSERT_TRUE(1);
 }
 
+TEST(test_llvm_codegen, codegen_var_and_for)
+{
+	//读取string作为输入
+	prepare_parser_for_test_string tdef(
+"def binary , 1 (left  right) right			"
+"def fibi(x)													"
+"	var a = 1: b = 1 : c in								"
+"	(for i = 3 : i < x in									"
+"		c = a + b,												"
+"		a = b,														"
+"		b = c) ,													"
+"		b																"
+);
+	//全局ast中现在只有这个函数
+    const auto& ast_vec = tdef.get_ast_vec();
+    LLVM_IR_code_generator code_generator;
+    ASSERT_TRUE(code_generator.codegen(ast_vec));
+    string tmpout;
+    code_generator.print_IR_to_str(tmpout);
+	ASSERT_TRUE(1);
+}

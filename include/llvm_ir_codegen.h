@@ -20,7 +20,7 @@ class LLVM_IR_code_generator final : public code_generator<Value *>
 	IRBuilder<> ir_builder;
 	Module *the_module;
 	Function* cur_func;
-	std::map<std::string, AllocaInst *> named_var;
+	std::map<std::string, AllocaInst *, std::less<>> named_var;
 	AllocaInst* create_alloca_at_func_entry(Function* func, const string& var_ame);
 public:
 	LLVM_IR_code_generator(StringRef name = "unamed") : ir_builder(the_context) , 
@@ -42,6 +42,7 @@ public:
 	Value* build_unary_op(const unary_operator_ast* unary) override;
 	Value* build_if(const if_ast* if_expr) override;
 	Value* build_for(const for_ast* for_expr) override;
+	Value* build_var(const var_ast* var_expr) override;
 //	bool codegen(ast_vector_t& global_vec) override;
 
 	void print_IR() override;

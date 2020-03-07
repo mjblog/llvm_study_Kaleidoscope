@@ -130,6 +130,8 @@ Value* LLVM_IR_code_generator::build_expr(const expr_ast* expr)
 			return build_if((const if_ast *)expr);
 		case FOR_AST:
 			return build_for((const for_ast *)expr);
+		case VAR_AST:
+			return build_var((const var_ast *)expr);
 		default:
 			err_print(/*isfatal*/true, "found unknown expr AST, aborting\n");
 	}
@@ -471,7 +473,7 @@ Value* LLVM_IR_code_generator::build_for(const for_ast* for_expr)
 	*/
 	const string& idt_name = for_expr->get_idt_name();
 	AllocaInst * idt_var = create_alloca_at_func_entry(cur_func, idt_name);
-	ir_builder.CreateStore(idt_var, start_val);
+	ir_builder.CreateStore(start_val, idt_var);
 
 /*
 创建各个基础框架bb，他们的作用分区和作用如下 ： 
@@ -513,9 +515,13 @@ after_loop:
 	*/
 	AllocaInst* old_val = nullptr;
 	if (auto it = named_var.find(idt_name); it != named_var.end())
+	{
 		old_val = it->second;
-	//从这里开始idt_name这个名称指向for中的定义
-	named_var[idt_name] = idt_var;
+		it->second = idt_var;
+	}
+	else
+		named_var[idt_name] = idt_var;
+	//修改named_var后，idt_name这个名称现在指向for中的定义
 
 	// Compute the end condition.
 	Value* end_cond = build_expr(for_expr->get_end().get());
@@ -535,7 +541,7 @@ after_loop:
 	//for body的value没有被语言定义，只要不为空表示没有错误就可以
 	Value* body = build_expr(for_expr->get_body().get());
 	print_and_return_nullptr_if_check_fail(body != nullptr, 
-		"can not build bodyin for_exp\n");
+		"can not build body of for_exp\n");
 	
 	//body发射完才是step
 	Value* step_val = nullptr;
@@ -567,6 +573,78 @@ after_loop:
 
 	// for expr always returns 0.0.
 	return Constant::getNullValue(Type::getDoubleTy(the_context));
+}
+
+/*
+var表达式是用于声明变量的。
+主要的逻辑包含如下部分：
+1 发射计算变量初始值的代码
+2 为声明的变量分配stack空间，并写入初始值
+3 更新named_var，使得后续流程可以使用新声明的变量
+4 发射body语句
+5 移除本var声明的语句，恢复named_var中被重名覆盖的变量
+*/
+Value* LLVM_IR_code_generator::build_var(const var_ast* var_expr)
+{
+	vector<AllocaInst*> var_allocas;
+	const vector<expr_t>& value_vec = var_expr->get_var_values();
+	const vector<string>& name_vec = var_expr->get_var_names();
+	assert(value_vec.size() == name_vec.size());
+/*
+注意这里的循环中不能修改named_var，因为build_expr可能会访问
+named_var。而根据语义定义，变量初始化时引用的是shadow前的值。
+例如def ff (x) var x=2:y=x+1中，y的初始值应该根据入参决定。
+*/
+	for (size_t i = 0; i < value_vec.size(); ++i)
+	{
+		Value* var_value = build_expr(value_vec[i].get());
+		const string& var_name = name_vec[i];
+		print_and_return_nullptr_if_check_fail(var_value != nullptr,
+			"failed to get the start value of %s\n", var_name.c_str());
+		auto var_alloca = create_alloca_at_func_entry(cur_func, name_vec[i]);
+		print_and_return_nullptr_if_check_fail(var_alloca != nullptr,
+			"failed to allocate stack for %s\n", var_name.c_str());
+		ir_builder.CreateStore(var_value, var_alloca);
+		var_allocas.push_back(var_alloca);
+	}
+
+/*
+本段更新named_var，供后续的body使用
+map没有提供浅拷贝的实现。
+如果不能接受对string的反复拷贝，只有缓存被shadow的条目。
+为了阻止分配新的冗余string，使用了string_view。
+*/
+	vector<std::pair<string_view, AllocaInst *>> saved_name_vec;
+	for (size_t i = 0; i < name_vec.size(); ++i)
+	{
+		const string& var_name = name_vec[i];
+		if (auto it = named_var.find(var_name); it != named_var.end())
+		{
+			saved_name_vec.push_back(std::make_pair
+				(string_view(var_name), it->second));
+			it->second = var_allocas[i];
+		}
+		else
+			named_var[var_name] = var_allocas[i];
+	}
+
+	auto body =  build_expr(var_expr->get_body().get());
+	print_and_return_nullptr_if_check_fail(body != nullptr, 
+		"failed to build body for var ast\n");
+
+//恢复named_var
+	for (size_t i = 0; i < saved_name_vec.size(); ++i)
+	{
+		const auto key = saved_name_vec[i].first;
+		auto result = named_var.find(key);
+		result->second = saved_name_vec[i].second;
+	}
+/*
+fixme!! 
+返回body的值作为var表达式的值，这个应该属于语义层面的定义。
+但是目前还没很好的方法在parser和ast中去定义。
+*/
+	return body;
 }
 
 /// CreateEntryBlockAlloca - Create an alloca instruction in the entry block of
