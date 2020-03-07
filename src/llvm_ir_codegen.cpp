@@ -591,10 +591,17 @@ Value* LLVM_IR_code_generator::build_var(const var_ast* var_expr)
 	const vector<string>& name_vec = var_expr->get_var_names();
 	assert(value_vec.size() == name_vec.size());
 /*
-注意这里的循环中不能修改named_var，因为build_expr可能会访问
-named_var。而根据语义定义，变量初始化时引用的是shadow前的值。
-例如def ff (x) var x=2:y=x+1中，y的初始值应该根据入参决定。
+根据语义定义，变量初始化时是立即进行shadow。
+例如def ff (x) var x=2:y=x+1中，y的初始值应该是3。
+实际测试c语言也是这样的语义逻辑。
 */
+
+/*
+map没有提供浅拷贝的实现。
+如果不能接受对string的反复拷贝，只有缓存被shadow的条目。
+为了阻止分配新的冗余string，使用了string_view。
+*/
+	vector<std::pair<string_view, AllocaInst *>> saved_name_vec;
 	for (size_t i = 0; i < value_vec.size(); ++i)
 	{
 		Value* var_value = build_expr(value_vec[i].get());
@@ -606,18 +613,6 @@ named_var。而根据语义定义，变量初始化时引用的是shadow前的�
 			"failed to allocate stack for %s\n", var_name.c_str());
 		ir_builder.CreateStore(var_value, var_alloca);
 		var_allocas.push_back(var_alloca);
-	}
-
-/*
-本段更新named_var，供后续的body使用
-map没有提供浅拷贝的实现。
-如果不能接受对string的反复拷贝，只有缓存被shadow的条目。
-为了阻止分配新的冗余string，使用了string_view。
-*/
-	vector<std::pair<string_view, AllocaInst *>> saved_name_vec;
-	for (size_t i = 0; i < name_vec.size(); ++i)
-	{
-		const string& var_name = name_vec[i];
 		if (auto it = named_var.find(var_name); it != named_var.end())
 		{
 			saved_name_vec.push_back(std::make_pair
