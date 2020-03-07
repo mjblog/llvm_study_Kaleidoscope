@@ -376,6 +376,7 @@ is_binary_op、is_unary_op等函数。
 */
 	ASSERT_DEATH(
 {
+	
 	prepare_parser_for_test_string tdef(
 "def unary - (a)  0 - a 		"
 "def mt(x)													"
@@ -383,4 +384,69 @@ is_binary_op、is_unary_op等函数。
 }, 
 	"- is a protected char, which shoud not be redefined"
 	);
+}
+
+TEST(test_ast, var_ast)
+{
+	//读取string作为输入
+	prepare_parser_for_test_string tdef(
+"def binary , 1 (left  right) right			"
+"def fibi(x)													"
+"	var a = 1: b = 1 : c in								"
+"	(for i = 3 : i < x in									"
+"		c = a + b,												"
+"		a = b,														"
+"		b = c) ,													"
+"		b																"
+);
+	auto& ast_vec = tdef.get_ast_vec();
+	//全局ast中有两个函数
+	ASSERT_EQ(ast_vec.size(),  2);
+
+	auto first = ast_vec[0];
+	ASSERT_TRUE(first->get_type() == FUNCTION_AST);
+	function_ast* func_ptr = static_cast<function_ast *> (first.get());
+	prototype_ast* prototype_ptr = func_ptr->get_prototype().get();
+	ASSERT_EQ(prototype_ptr->get_name(),
+		prototype_ast::build_operator_external_name(2, ",", 1));
+
+/*
+这个函数的结构是body为var_ast，var_ast的body是一个连续的binary运算。
+binary运算以','连接，从左到右运算。先用for算出结果放到变量b中，
+再把b作为body表达式的结果，body的结果作为var_ast的结果，
+var_ast的结果又最终作为函数返回值。
+*/
+	auto second = ast_vec[1];
+	ASSERT_TRUE(second->get_type() == FUNCTION_AST);
+	function_ast* func_ptr2 = static_cast<function_ast *> (second.get());
+	expr_ast*  body = func_ptr2->get_body().get();
+	ASSERT_TRUE(body->get_type() == VAR_AST);
+	var_ast* body_ast = static_cast<var_ast *>(body);
+
+	ASSERT_EQ((body_ast->get_var_names())[0], "a");
+	ASSERT_EQ((body_ast->get_var_names())[1], "b");
+	ASSERT_EQ((body_ast->get_var_names())[2], "c");
+
+	expr_ast* var_val1 = (body_ast->get_var_values())[0].get();
+	number_ast* var_val1_ptr = static_cast<number_ast *>(var_val1);
+	ASSERT_EQ(var_val1_ptr->get_val(), 1);
+
+	expr_ast* var_val2 = (body_ast->get_var_values())[1].get();
+	number_ast* var_val2_ptr = static_cast<number_ast *>(var_val2);
+	ASSERT_EQ(var_val2_ptr->get_val(), 1);
+
+	expr_ast* var_val3 = (body_ast->get_var_values())[2].get();
+	number_ast* var_val3_ptr = static_cast<number_ast *>(var_val3);
+	ASSERT_EQ(var_val3_ptr->get_val(), 0);
+	//var的body就是一个 lhs为for，右值为b，op为','的binary运算。
+	expr_ast* var_body = body_ast->get_body().get();
+	ASSERT_EQ(var_body->get_type(), BINARY_OPERATOR_AST);
+	binary_operator_ast* var_body_bin = 
+		static_cast<binary_operator_ast *>(var_body);
+	ASSERT_EQ(var_body_bin->get_op(), BINARY_USER_DEFINED);
+	ASSERT_EQ(var_body_bin->get_op_external_name(),
+		prototype_ast::build_operator_external_name(2, ",", 1));
+
+	ASSERT_EQ(var_body_bin->get_lhs()->get_type(), FOR_AST);
+	ASSERT_EQ(var_body_bin->get_rhs()->get_type(), VARIABLE_AST);
 }

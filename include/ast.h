@@ -41,6 +41,7 @@ typedef enum ast_type
 	CALL_AST,
 	IF_AST,
 	FOR_AST,
+	VAR_AST,
 	UNKNOWN_AST
 } ast_t;
 
@@ -323,9 +324,8 @@ class call_ast : public expr_ast
 	expr_vector args;
 public:
 	call_ast (prototype_t in_callee, expr_vector in_args) 
+		: callee(std::move(in_callee)), args(std::move(in_args))
 	{
-		callee = std::move(in_callee);
-		args = std::move(in_args);
 		type = CALL_AST;
 	}
 	const prototype_t& get_callee() const {return callee;}
@@ -379,5 +379,27 @@ public:
 	const expr_t& get_body() const{ return body;}
 };
 
+/*
+变量定义语法:
+var x=1 : y : z =2  in 
+	多条语句，可以以','连接
+*/
+class var_ast : public expr_ast
+{
+	vector<string> var_names;
+	expr_vector var_values;
+	expr_t body;
+public:
+	var_ast(vector<string>& var_names, expr_vector& var_values, expr_t& body)
+		: var_names(std::move(var_names)), var_values(std::move(var_values)),
+		body(std::move(body))
+	{
+		type = VAR_AST;
+	}
+
+	const vector<string>& get_var_names() const { return var_names;}
+	const expr_vector& get_var_values() const { return var_values;}
+	const expr_t& get_body() const {return body;}
+};
 } // end of toy_compiler
 #endif

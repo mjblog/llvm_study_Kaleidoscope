@@ -197,10 +197,9 @@ pair<string, prototype_t*> 再转为 pair<string_view, prototype_t*>再insert。
 }
 
 /*
-expr 是最为复杂的ast，有四种子类。从格式上来说，应满足如下要求
+expr 是最为通用的表达式，其格式为
 左操作数+(binary_operator+右操作数)*
-操作数可以是如下几种类型：
-number 数值；identifier 变量；identifier() call调用；(expr) 括号包裹的表达式
+操作数可以由parse_unaryr给出(最终到parse_primary_exp)
 */
 expr_t parser::parse_expr()
 {
@@ -223,7 +222,13 @@ expr_t parser::parse_expr()
 	}
 }
 
-//number 数值；identifier 变量；identifier() call调用；(expr) 括号包裹的表达式
+/*
+四种表达数值的ast ： 
+number 数值；identifier 变量；
+identifier() call调用；(expr) 括号包裹的表达式
+
+另外加
+*/
 expr_t parser::parse_primary_expr()
 {
 	const auto& cur_token = get_cur_token();
@@ -240,6 +245,8 @@ expr_t parser::parse_primary_expr()
 			return parse_if();
 		case TOKEN_FOR:
 			return parse_for();
+		case TOKEN_VAR:
+			return parse_var();
 		default:
 			err_print(false, "expected number,identifier or '(', but got %s\n",
 				cur_token.get_cstr());
@@ -529,6 +536,69 @@ expr_t parser::parse_for()
 		"failed to parse body in for_ast\n");
 	return std::make_shared<for_ast>(std::move(idt_var_name), std::move(start),
 		std::move(end), std::move(step), std::move(body));
+}
+
+/*
+原示例中，var表达式的格式：
+VAR a = 1, b = 1, c IN
+	xxx : yyy :
+b;
+为了和大多数语言保持一致，我们使用','连接多个语句，使用':'分割特殊表达式。
+修改后的格式为
+VAR a=1 : b = 1: c IN
+	xxxx, 
+	yyyy,
+b
+*/
+expr_t parser::parse_var() 
+{
+	get_next_token();	//吃掉var
+	vector<string> names;
+	expr_vector values;
+	while(1)
+	{
+		const auto* cur_token = &(get_cur_token());
+		print_and_return_nullptr_if_check_fail(*cur_token == TOKEN_IDENTIFIER,
+			"expected a variable name after var, but got %s\n", cur_token->get_cstr());
+		const string var_name_str = cur_token->get_str();
+		get_next_token();	//吃掉var_name
+
+		cur_token = &(get_cur_token());
+		//不设置var的初始值，默认为0
+		expr_t var_value = std::make_shared<number_ast>(0);
+		//可选的=expr设置变量的初始值
+		if (*cur_token == TOKEN_BINARY_OP && cur_token->get_str() == "=")
+		{
+			get_next_token();	//吃掉'='后再解析
+			var_value = parse_expr();
+			print_and_return_nullptr_if_check_fail(var_value != nullptr,
+				"failed to get value for variable %s\n", var_name_str.c_str());
+		}
+
+		//保存本次解析到的var/value对
+		names.push_back(std::move(var_name_str));
+		//如果本次循环获取的变量没有使用=赋值，给它一个0作为初始值
+		values.push_back(std::move(var_value));
+
+		//走到这里还剩两种可能，要么是IN，要么是':'
+		cur_token = &(get_cur_token());
+		if (*cur_token == TOKEN_COLON)
+			get_next_token();	//吃掉':'继续循环
+		else if (*cur_token == TOKEN_IN)
+			break;
+		else
+		{
+			print_and_return_nullptr_if_check_fail(false, "expected"
+				"':' or 'in' after var %s, but got %s\n", names.back().c_str(),
+				cur_token->get_cstr());
+		}
+	}
+	//走到这里当前token一定是in
+	get_next_token();	//吃掉in
+	auto body = parse_expr();
+	print_and_return_nullptr_if_check_fail(body != nullptr,
+		"failed to get body for var ast\n");
+	return make_shared<var_ast>(names, values, body);
 }
 
 void parser::handle_extern()

@@ -33,6 +33,7 @@ typedef  enum token_type: unsigned char {
 	TOKEN_IN,
 	TOKEN_BINARY,
 	TOKEN_UNARY,
+	TOKEN_VAR,
 	TOKEN_USER_DEFINED_BINARY_OPERATOR,
 	TOKEN_USER_DEFINED_UNARY_OPERATOR,
 	TOKEN_EOF,
@@ -74,6 +75,9 @@ public:
 			return TOKEN_BINARY;
 		if (input == "unary")
 			return TOKEN_UNARY;
+
+		if (input == "var")
+			return TOKEN_VAR;
 		//关键字排除后，作为名称标识
 		return TOKEN_IDENTIFIER;
 	}
