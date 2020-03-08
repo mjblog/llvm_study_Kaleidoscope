@@ -325,6 +325,10 @@ PHI操作是完成IF逻辑的关键点。在具体实现时，
 	// emit then_bb中的expr计算指令获取其val
 	ir_builder.SetInsertPoint(then_bb);
 	Value* then_val = build_expr(if_expr->get_then().get());
+/*
+fixme!!这里else_bb和merge_bb都还未挂入func链表，如果这里出错返回了。
+会导致else_bb和merge_bb内存泄漏，后续应该考虑修复。
+*/
 	print_and_return_nullptr_if_check_fail(then_val != nullptr,
 		"can not build then expr for if\n");
 	ir_builder.CreateBr(merge_bb);
@@ -599,9 +603,9 @@ Value* LLVM_IR_code_generator::build_var(const var_ast* var_expr)
 /*
 map没有提供浅拷贝的实现。
 如果不能接受对string的反复拷贝，只有缓存被shadow的条目。
-为了阻止分配新的冗余string，使用了string_view。
+这里直接记录了被shadow 变量的alloca地址，后续恢复时就无需再查找了。
 */
-	vector<std::pair<string_view, AllocaInst *>> saved_name_vec;
+	vector<std::pair<AllocaInst **, AllocaInst *>> saved_name_vec;
 	for (size_t i = 0; i < value_vec.size(); ++i)
 	{
 		Value* var_value = build_expr(value_vec[i].get());
@@ -615,8 +619,8 @@ map没有提供浅拷贝的实现。
 		var_allocas.push_back(var_alloca);
 		if (auto it = named_var.find(var_name); it != named_var.end())
 		{
-			saved_name_vec.push_back(std::make_pair
-				(string_view(var_name), it->second));
+			saved_name_vec.push_back(
+				std::make_pair(&(it->second), it->second));
 			it->second = var_allocas[i];
 		}
 		else
@@ -630,9 +634,8 @@ map没有提供浅拷贝的实现。
 //恢复named_var
 	for (size_t i = 0; i < saved_name_vec.size(); ++i)
 	{
-		const auto key = saved_name_vec[i].first;
-		auto result = named_var.find(key);
-		result->second = saved_name_vec[i].second;
+		auto old_alloca_addr = saved_name_vec[i].first;
+		*old_alloca_addr = saved_name_vec[i].second;
 	}
 /*
 fixme!! 
