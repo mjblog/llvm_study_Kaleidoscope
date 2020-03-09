@@ -1,18 +1,12 @@
 #include "llvm_optimizer.h"
 #include "llvm/Passes/PassBuilder.h"
-#include "llvm/Support/Host.h"  //for native target
-#include "llvm/Support/TargetRegistry.h"    //for lookupTarget
-#include "llvm/Support/TargetSelect.h" 	//for InitializeNativeTarget...
-#include "llvm/Target/TargetOptions.h"	//for TargetOptions
-#include "llvm/CodeGen/CommandFlags.inc"	//for InitTargetOptionsFromCodeGenFlags
 #include "llvm/Transforms/Scalar/Reassociate.h" //for ReassociatePass
-
 #include "llvm/Transforms/Scalar/GVN.h"	//for createGVNPass
 #include "llvm/Transforms/Scalar/SimplifyCFG.h" //for SimplifyCFGPass
 #include "llvm/Transforms/Scalar.h"	//for createReassociatePass and createCFGSimplificationPass
 #include "llvm/Transforms/InstCombine/InstCombine.h"	//for createInstructionCombiningPass
-
 #include "llvm/Analysis/OptimizationRemarkEmitter.h" //for OptimizationRemarkEmitterAnalysis
+#include "llvm_target.h"
 /*
 本文件用于建模调用LLVM的optimizer优化(codegen生成的)LLVM-IR的行为。
 参考https://llvm.org/docs/WritingAnLLVMPass.html :
@@ -29,32 +23,6 @@ optimize_module 用于对当前module进行LLVM的O2优化
 optimize_function 用于重现原示例中的简单函数级组合优化
 */
 namespace toy_compiler{
-
-//为了简单，我们当前只支持本地机器
-TargetMachine * get_target_machine()
-{
-	InitializeNativeTarget();
-	InitializeNativeTargetAsmPrinter();
-	InitializeNativeTargetAsmParser();
-/*
-使用LLVM提供的接口，构建出native的target machine
-参考了https://llvm.org/docs/tutorial/MyFirstLanguageFrontend/LangImpl08.html
-*/
-	const string& native_triple = sys::getDefaultTargetTriple();
-	string tgt_err;
-	const Target *tgt = TargetRegistry::lookupTarget(native_triple, tgt_err);
-	assert(tgt != nullptr);
-	//原示例代码有一些小问题，例如没有初始化Options，RM传参没意义；
-	//所以从llvm的opt.cpp中抄写了下面部分，
-	const TargetOptions Options = InitTargetOptionsFromCodeGenFlags();
-	//before using getCPUStr() and getFeaturesStr() ，设置cpu
-	MCPU = "native";
-
-	TargetMachine * ret = tgt->createTargetMachine(native_triple, getCPUStr(), getFeaturesStr(), Options, None);
-	assert(ret != nullptr);
-	return ret;
-}
-
 void llvm_optimizer::optimize_module(Module& mod , int opt_level)
 {
 /*
@@ -68,10 +36,10 @@ void llvm_optimizer::optimize_module(Module& mod , int opt_level)
 调用ModulePassManager.run(mod)完成优化
 */
 
-	TargetMachine * target_machine = get_target_machine();
+	TargetMachine * target_machine = llvm_target::get_native_target();
 	/*原示例第8章提到设置一下有助于优化*/
 	mod.setDataLayout(target_machine->createDataLayout());
-	mod.setTargetTriple(sys::getDefaultTargetTriple());
+	mod.setTargetTriple(target_machine->getTargetTriple().str());
 
 /*新的PassManger用法与原示例有较大区别，下面片段来自
 	tools/opt/NewPMDriver.cpp */
@@ -123,7 +91,7 @@ void llvm_optimizer::optimize_function(Function& func)
 特定分析pass的支持(理论上这个要求是合理的，但需要进一步明确)。
 参考NewPMDriver.cpp中注册全部分析pass的更为稳妥。
 */
-	TargetMachine * target_machine = get_target_machine();
+	TargetMachine * target_machine = llvm_target::get_native_target();
 /*新的PassManger用法与原示例有较大区别，下面片段来自
 	tools/opt/NewPMDriver.cpp*/
 	class PassBuilder opt_builder(target_machine);
@@ -216,7 +184,7 @@ fixme!!
 //下面函数使用了builder，但是无法自己定义优化所用的pass，故废弃。
 void llvm_optimizer::optimize_function_use_builder(Function& func)
 {
-	TargetMachine * target_machine = get_target_machine();
+	TargetMachine * target_machine = get_native_target();
 
 /*新的PassManger用法与原示例有较大区别，下面片段来自
 	tools/opt/NewPMDriver.cpp*/
