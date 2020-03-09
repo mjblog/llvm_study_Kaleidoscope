@@ -4,6 +4,7 @@
 #include "codegen.h"
 #include "llvm_ir_codegen.h"
 #include "llvm_optimizer.h"
+#include "flags.h"
 using namespace toy_compiler;
 using namespace std;
 static void print_help()
@@ -21,10 +22,14 @@ static void stdin_stdout_compile()
 	LLVM_IR_code_generator code_generator;
 	code_generator.codegen(ast_vec);
 	Module* module = code_generator.get_module();
-	llvm_optimizer::optimize_module(*module);
+	if (!global_flags.no_optimization)
+		llvm_optimizer::optimize_module(*module);
 	code_generator.print_IR();
 }
 
+namespace toy_compiler{
+extern bool build_object(string& object_name, Module* module);
+}
 
 static bool file_compile(const char* infile)
 {
@@ -40,9 +45,15 @@ static bool file_compile(const char* infile)
 	LLVM_IR_code_generator code_generator;
 	code_generator.codegen(ast_vec);
 	Module* module = code_generator.get_module();
-	llvm_optimizer::optimize_module(*module);
-	string outfile = infile + string(".ll");
-	code_generator.print_IR_to_file(outfile);
+	if (!global_flags.no_optimization)
+		llvm_optimizer::optimize_module(*module);
+	string outfile = infile + string(".o");
+	toy_compiler::build_object(outfile, module);
+	if (global_flags.save_temps)
+	{
+		string out_llvm_ir_file = outfile + ".ll";
+		code_generator.print_IR_to_file(out_llvm_ir_file);
+	}
 	return true;
 }
 
