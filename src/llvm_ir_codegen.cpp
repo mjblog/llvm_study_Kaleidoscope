@@ -687,6 +687,4 @@ void LLVM_IR_code_generator::print_IR_to_file(string& filename)
 	the_module->print(out_stream, nullptr);
 }
 
-
-
 }	//end of toy_compiler
