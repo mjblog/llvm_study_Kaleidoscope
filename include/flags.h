@@ -36,14 +36,7 @@ public:
 	flag_item<flag_type> flag_name;
 #include "flags.def"
 #undef DECL_FLAG
-	control_flags()
-	{
-#define DECL_FLAG(flag_type, flag_name, default_val, input_env, des) \
-	flag_item<flag_type> flag_name##cons(default_val, input_env, des);\
-	flag_name = flag_name##cons;
-#include "flags.def"
-#undef DECL_FLAG
-	}
-}global_flags;
-
+	control_flags();
+};
+extern control_flags global_flags;
 }	//end of toy_compiler
