@@ -44,6 +44,11 @@ class parser final
 //	expr_t parser::parse_binary_op_rhs(int prev_op_prio);
 	expr_t parse_binary_expr(int prev_op_prio, expr_t lhs);
 	expr_t parse_unary_expr();
+	template <typename T, typename... U>
+	shared_ptr<T> build_ast(U...args)
+	{
+		return std::make_shared<T>(linked_lexer.get_source_loc(), args...);
+	}
 public:
 	parser(lexer& in_lexer) : linked_lexer(in_lexer) {}
 	void parse();

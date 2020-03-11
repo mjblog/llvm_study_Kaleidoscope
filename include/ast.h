@@ -65,28 +65,32 @@ created_ast_num是从0开始自增的整数，表达当前已经建立的ast数�
 	}
 public:
 	virtual ~generic_ast() {}
-	generic_ast()
+	generic_ast(const source_location& loc, ast_t type)
+		: loc(loc), type(type)
 	{
 	/*
 	ast_num的修改不考虑多线程并发，语法有前后相关性不太可能并发。
 	修改也不必考虑整数溢出，64位整数溢出不可能发生，早就OOM了。
-	为了保证唯一性，析构时不--
+	为了保证唯一性，析构时不减少id值
 	*/
 		id = get_created_ast_num()++;
-		type = GENERIC_AST;
 	}
 	uint64_t get_id() const {return id;}
 	void set_id(uint64_t in_id) {id = in_id;}
+	const source_location& get_source_location() {return loc;}
 	ast_t get_type() const {return type;}
 protected:
+	source_location loc;
 	ast_t type;
+
 };
 
 
 class expr_ast : public generic_ast
 {
 public:
-	expr_ast()  {type = EXPR_AST;}
+	expr_ast(const source_location& loc, ast_t type) 
+		: generic_ast(loc, type) {}
 	virtual ~expr_ast() {}
 };
 
@@ -108,13 +112,13 @@ class prototype_ast : public generic_ast,
 	int priority_for_binary = -1;
 public:
 	prototype_t get_shared_ptr()  {return shared_from_this();}
-	prototype_ast(const string& name, vector<string> args,
-		bool is_operator = false, int priority_for_binary = -1) :
-		name(std::move(name)), args(std::move(args)),
-		is_operator(is_operator), priority_for_binary(priority_for_binary)
-		{
-			type = PROTOTYPE_AST;
-		}
+	prototype_ast(const source_location& loc, const string& name,
+		vector<string> args, bool is_operator = false, 
+		int priority_for_binary = -1) 
+		: generic_ast(loc, PROTOTYPE_AST), name(std::move(name)),
+		args(std::move(args)), is_operator(is_operator),
+		priority_for_binary(priority_for_binary)
+		{}
 	const string& get_name() const { return name; }
 	const vector<string>& get_args() const {return args;}
 
@@ -177,11 +181,10 @@ class function_ast : public generic_ast
 	prototype_t prototype;
 	expr_t body;
 public:
-	function_ast(prototype_t  prototype, expr_t body) :
-		prototype(std::move(prototype)), body(std::move(body))
-	{
-		type = FUNCTION_AST;
-	}
+	function_ast(const source_location& loc,
+		prototype_t  prototype, expr_t body)
+		: generic_ast(loc, FUNCTION_AST), prototype(std::move(prototype)),
+		body(std::move(body)) {}
 	const expr_t& get_body() const{return body;}
 	const prototype_t& get_prototype() const{return prototype;}
 };
@@ -197,7 +200,8 @@ class number_ast : public expr_ast
 {
 	double val;
 public:
-	number_ast(double val) : val(val) { type = NUMBER_AST;}
+	number_ast(const source_location& loc, double val)
+		: expr_ast(loc, NUMBER_AST), val(val) {}
 	inline double get_val() const {return val;}
 };
 
@@ -205,7 +209,8 @@ class variable_ast : public expr_ast
 {
 	string name;
 public:
-	variable_ast(const string & name) : name(name) { type = VARIABLE_AST;}
+	variable_ast(const source_location& loc, const string& name)
+		: expr_ast(loc, VARIABLE_AST), name(name) {}
 	const string& get_name() const {return  name;}
 };
 
@@ -229,13 +234,10 @@ class binary_operator_ast : public expr_ast
 //用户自定义operator，发射call时，需要知道完整的名称
 	const string op_external_name;
 public:
-	binary_operator_ast(binary_operator_t op, expr_t LHS,
-		expr_t RHS, const string& op_external_name) : 
-		op(op), LHS(std::move(LHS)), RHS(std::move(RHS)), 
-		op_external_name(std::move(op_external_name))
-	{
-		type = BINARY_OPERATOR_AST;
-	}
+	binary_operator_ast(const source_location& loc, binary_operator_t op,
+		expr_t LHS, expr_t RHS, const string& op_external_name)
+		: expr_ast(loc, BINARY_OPERATOR_AST), op(op), LHS(std::move(LHS)), RHS(std::move(RHS)), 
+		op_external_name(std::move(op_external_name)) {}
 
 	static int get_priority(binary_operator_t in_op)
 	{
@@ -297,12 +299,11 @@ class unary_operator_ast : public expr_ast
 //用户自定义operator，发射call时，需要知道完整的名称
 	string op_external_name;
 public:
-	unary_operator_ast(const string& opcode, expr_t operand, 
-		const string& op_external_name) : opcode(opcode), 
-		operand(std::move(operand)), op_external_name(std::move(op_external_name))
-	{
-		type = UNARY_OPERATOR_AST;
-	}
+	unary_operator_ast(const source_location& loc, const string& opcode,
+		expr_t operand, const string& op_external_name)
+		: expr_ast(loc, UNARY_OPERATOR_AST), opcode(opcode),
+		operand(std::move(operand)),
+		op_external_name(std::move(op_external_name)) {}
 
 	const string& get_opcode() const {return opcode;}
 	const expr_t& get_operand() const {return operand;}
@@ -323,11 +324,10 @@ class call_ast : public expr_ast
 //这里的args是调用处传入的实际参数
 	expr_vector args;
 public:
-	call_ast (prototype_t in_callee, expr_vector in_args) 
-		: callee(std::move(in_callee)), args(std::move(in_args))
-	{
-		type = CALL_AST;
-	}
+	call_ast (const source_location& loc, prototype_t in_callee,
+		expr_vector in_args) 
+		: expr_ast(loc, CALL_AST), callee(std::move(in_callee)),
+		args(std::move(in_args)) {}
 	const prototype_t& get_callee() const {return callee;}
 	const expr_vector& get_args() const {return args;}
 };
@@ -339,8 +339,9 @@ class if_ast : public expr_ast
 	expr_t then_expr;
 	expr_t else_expr;
 public:
-	if_ast(expr_t c, expr_t t, expr_t e) : cond_expr(std::move(c)), 
-		then_expr(std::move(t)), else_expr(std::move(e)) {type = IF_AST;}
+	if_ast(const source_location& loc, expr_t c, expr_t t, expr_t e)
+		: expr_ast(loc, IF_AST), cond_expr(std::move(c)),
+		then_expr(std::move(t)), else_expr(std::move(e)) {}
 	const expr_t& get_cond() const{ return cond_expr;}
 	const expr_t& get_then() const{ return then_expr;}
 	const expr_t& get_else() const{ return else_expr;}
@@ -365,12 +366,11 @@ class for_ast : public expr_ast
 	expr_t step;
 	expr_t body;
 public:
-	for_ast(const string& name, expr_t in_start, 
-		expr_t in_end, expr_t in_step, expr_t in_body) : 
-		induction_var_name(std::move(name)), start(std::move(in_start)), 
-		end(std::move(in_end)), step(std::move(in_step)),
-		body(std::move(in_body))
-	{type = FOR_AST;}
+	for_ast(const source_location& loc, const string& name, expr_t in_start, 
+		expr_t in_end, expr_t in_step, expr_t in_body)
+		: expr_ast(loc, FOR_AST), induction_var_name(std::move(name)), 
+		start(std::move(in_start)), end(std::move(in_end)),
+		step(std::move(in_step)), body(std::move(in_body)) {}
 
 	const string& get_idt_name() const{ return induction_var_name;}
 	const expr_t& get_start() const{ return start;}
@@ -390,12 +390,10 @@ class var_ast : public expr_ast
 	expr_vector var_values;
 	expr_t body;
 public:
-	var_ast(vector<string>& var_names, expr_vector& var_values, expr_t& body)
-		: var_names(std::move(var_names)), var_values(std::move(var_values)),
-		body(std::move(body))
-	{
-		type = VAR_AST;
-	}
+	var_ast(const source_location& loc, vector<string>& var_names,
+		expr_vector& var_values, expr_t& body)
+		: expr_ast(loc, VAR_AST), var_names(std::move(var_names)),
+		var_values(std::move(var_values)), body(std::move(body)) {}
 
 	const vector<string>& get_var_names() const { return var_names;}
 	const expr_vector& get_var_values() const { return var_values;}

@@ -5,6 +5,8 @@
 #include "utils.h"
 namespace toy_compiler{
 using namespace std;
+
+
 void parser::parse()
 {
 /*
@@ -67,7 +69,7 @@ shared_ptr<function_ast> parser::parse_definition()
 	print_and_return_nullptr_if_check_fail(body != nullptr, 
 		"fail to get the body for function %s\n", proto->get_name().c_str());
 
-	return std::make_shared<function_ast>(std::move(proto), std::move(body));
+	return build_ast<function_ast>(std::move(proto), std::move(body));
 }
 
 
@@ -156,7 +158,7 @@ prototype有三种格式。
 	*/
 		if (find_prototype(name) != nullptr)
 			err_print(true, "%s redefined\n", name.c_str());
-		ret = make_shared<prototype_ast>(name, std::move(args));
+		ret = build_ast<prototype_ast>(name, std::move(args));
 	}
 	else
 	{	//operator 生成
@@ -184,7 +186,7 @@ prototype有三种格式。
 		print_and_return_nullptr_if_check_fail((size_t)args_num_limit == 
 			args.size(), "operator expected %d args but got %ld\n",
 			args_num_limit, args.size());
-		ret = make_shared<prototype_ast>(name, std::move(args), true, op_prio);
+		ret = build_ast<prototype_ast>(name, std::move(args), true, op_prio);
 	}
 /*
 注意这里一定要先转为string_view再make_pair，否则这里会临时构造出一个
@@ -271,7 +273,7 @@ expr_t parser::parse_unary_expr()
 			"get the operand of unary %s\n", opcode.c_str());
 		const auto& name = prototype_ast::build_operator_external_name(1,
 			opcode);
-		return make_shared<unary_operator_ast>(opcode,
+		return build_ast<unary_operator_ast>(opcode,
 			std::move(operand), std::move(name));
 	}
 }
@@ -366,7 +368,7 @@ expr_t parser::parse_binary_expr(int prev_op_prio, expr_t lhs)
 					"destination of '=' must be a variable\n");
 			}
 
-			lhs = std::make_shared<binary_operator_ast>(
+			lhs = build_ast<binary_operator_ast>(
 				cur_op_type, lhs, new_rhs, op_external_name);
 		}
 		else
@@ -378,7 +380,7 @@ expr_t parser::parse_number()
 {
 	double num_d = get_double_from_number_token(get_cur_token());
 	get_next_token();		//吃掉当前的number token
-	return std::make_shared<number_ast>(num_d);
+	return build_ast<number_ast>(num_d);
 }
 
 //该函数要处理variable变量和call调用两种情况
@@ -387,7 +389,7 @@ expr_t parser::parse_identifier()
 	string name = get_cur_token().get_str();
 	auto next_token = get_next_token();
 	if (next_token != TOKEN_LEFT_PAREN)
-		return std::make_shared<variable_ast>(name);
+		return build_ast<variable_ast>(name);
 	else
 		get_next_token(); //吃掉左括号
 	vector<expr_t> args;
@@ -405,7 +407,7 @@ expr_t parser::parse_identifier()
 			print_and_return_nullptr_if_check_fail(find_callee != nullptr, 
 				"can not find prototype for %s\n", name.c_str());
 			prototype_t callee(find_callee);
-			return std::make_shared<call_ast>(callee, std::move(args));
+			return build_ast<call_ast>(callee, std::move(args));
 		}
 		auto arg = parse_expr();
 		print_and_return_nullptr_if_check_fail(arg != nullptr, 
@@ -473,7 +475,7 @@ Erlang语言的if如果没有condition为真，会抛出异常。
 	print_and_return_nullptr_if_check_fail(expr_in_else != nullptr, 
 		"failed to parse else expr in if_ast\n");
 
-	return std::make_shared<if_ast>(cond, expr_in_then, expr_in_else);
+	return build_ast<if_ast>(cond, expr_in_then, expr_in_else);
 }
 
 /*
@@ -534,7 +536,7 @@ expr_t parser::parse_for()
 	expr_t body = parse_expr();
 	print_and_return_nullptr_if_check_fail(body != nullptr, 
 		"failed to parse body in for_ast\n");
-	return std::make_shared<for_ast>(std::move(idt_var_name), std::move(start),
+	return build_ast<for_ast>(std::move(idt_var_name), std::move(start),
 		std::move(end), std::move(step), std::move(body));
 }
 
@@ -565,7 +567,7 @@ expr_t parser::parse_var()
 
 		cur_token = &(get_cur_token());
 		//不设置var的初始值，默认为0
-		expr_t var_value = std::make_shared<number_ast>(0);
+		expr_t var_value = build_ast<number_ast>(0);
 		//可选的=expr设置变量的初始值
 		if (*cur_token == TOKEN_BINARY_OP && cur_token->get_str() == "=")
 		{
@@ -598,7 +600,7 @@ expr_t parser::parse_var()
 	auto body = parse_expr();
 	print_and_return_nullptr_if_check_fail(body != nullptr,
 		"failed to get body for var ast\n");
-	return make_shared<var_ast>(names, values, body);
+	return build_ast<var_ast>(names, values, body);
 }
 
 void parser::handle_extern()

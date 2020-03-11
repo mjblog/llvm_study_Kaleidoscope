@@ -113,10 +113,10 @@ struct source_location
 	int64_t col;
 	int64_t line;
 public:
-	source_location(const std::string& name, int64_t col, int64_t line)
+	source_location(const std::string& name, int64_t col = 0, int64_t line = 1)
 		: file_name(name), col(col), line(line)
 	{}
-	source_location(): file_name(" ", -1, -1) {}
+	source_location(): file_name(" "), col(-1), line(1) {}
 };
 
 class lexer
@@ -133,9 +133,14 @@ class lexer
 	inline int get_next_char(std::istream *in)
 	{
 		int new_char = in->get();
-		++loc.col;
 		if (new_char == '\r' || new_char == '\n')
+		{
 			++loc.line;
+			loc.col = 0;
+		}
+		else
+			++loc.col;
+		
 		return new_char;
 	}
 
@@ -341,7 +346,7 @@ class lexer
 
 public:
 	bool is_ok = true;
-	const source_location get_source_loc() const {return loc;}
+	const source_location& get_source_loc() const {return loc;}
 	inline const token & get_cur_token() const {return cur_token;}
 	inline const token & get_next_token()
 	{
@@ -411,7 +416,7 @@ clang作为一个c99的扩展支持了该特性。g++直到10版本都还未支�
 		return search_tab[int(input)];
 	}
 
-	lexer(const std::string& filename) : loc(filename, 1, 1)
+	lexer(const std::string& filename) : loc(filename)
 	{
 		auto *fstream  = new std::ifstream;
 		//必须先赋值，否则打开失败的情况下析构无法释放fstream
@@ -426,7 +431,7 @@ clang作为一个c99的扩展支持了该特性。g++直到10版本都还未支�
 
 	//通常情况下应该只有测试流程会用该种初始化
 	lexer()	
-		: input_stream(&std::cin), loc("_std::cin_", 1, 1)
+		: input_stream(&std::cin), loc("_std::cin_")
 	{}
 
 	~lexer()
