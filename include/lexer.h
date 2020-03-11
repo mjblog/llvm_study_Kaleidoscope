@@ -112,9 +112,14 @@ class lexer
 	std::istream *input_stream = nullptr;
 	std::string error_msg;
 	token  cur_token;
+	/*
+	语义上cur_char指向待解析token的第一个字符。
+	但是，在初次进入时这个值是未知的，我们用一个无害的空格作为开始
+	*/
+	int cur_char = ' ';
 	static inline int get_next_char(std::istream *in)
 	{
-		return in->get(); 
+		return in->get();
 	}
 
 	static inline void skip_spaces(std::istream *in, int & cur_char)
@@ -270,11 +275,6 @@ class lexer
 	//从输入流中取数据，解析好后放入cur_token中
 	void update_cur_token()
 	{
-		/*
-		语义上cur_char指向待解析token的第一个字符。
-		但是，在初次进入时这个值是未知的，我们用一个无害的空格作为开始
-		*/
-		static int cur_char = ' ';
 		while (cur_char != EOF)
 		{
 			skip_spaces(input_stream, cur_char);
@@ -317,12 +317,9 @@ class lexer
 		}
 /*
 到这里一定是eof了，lexer本次工作结束了。
-为了lexer还能再次重新工作，这里把static的cur_char重新设置为' '。
-否则下次初始化后cur_char还是eof，流程无法向前了。
 */
 		cur_token.get_str().clear();
 		cur_token.type = TOKEN_EOF;
-		cur_char = ' ';
 	}
 
 public:
