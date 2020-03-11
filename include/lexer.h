@@ -107,6 +107,18 @@ public:
 	inline operator token_type_t() const  {return type;}
 };
 
+struct source_location
+{
+	std::string file_name;
+	int64_t col;
+	int64_t line;
+public:
+	source_location(const std::string& name, int64_t col, int64_t line)
+		: file_name(name), col(col), line(line)
+	{}
+	source_location(): file_name(" ", -1, -1) {}
+};
+
 class lexer
 {
 	std::istream *input_stream = nullptr;
@@ -117,18 +129,23 @@ class lexer
 	但是，在初次进入时这个值是未知的，我们用一个无害的空格作为开始
 	*/
 	int cur_char = ' ';
-	static inline int get_next_char(std::istream *in)
+	source_location loc;
+	inline int get_next_char(std::istream *in)
 	{
-		return in->get();
+		int new_char = in->get();
+		++loc.col;
+		if (new_char == '\r' || new_char == '\n')
+			++loc.line;
+		return new_char;
 	}
 
-	static inline void skip_spaces(std::istream *in, int & cur_char)
+	inline void skip_spaces(std::istream *in, int & cur_char)
 	{
 		while (isspace(cur_char))
 			cur_char = get_next_char(in);
 	}
 
-	static bool process_comments(std::istream *in, int & cur_char)
+	bool process_comments(std::istream *in, int & cur_char)
 	{
 		if (cur_char == '#')
 		{
@@ -324,6 +341,7 @@ class lexer
 
 public:
 	bool is_ok = true;
+	const source_location get_source_loc() const {return loc;}
 	inline const token & get_cur_token() const {return cur_token;}
 	inline const token & get_next_token()
 	{
@@ -393,7 +411,7 @@ clang作为一个c99的扩展支持了该特性。g++直到10版本都还未支�
 		return search_tab[int(input)];
 	}
 
-	lexer(const std::string & filename)
+	lexer(const std::string& filename) : loc(filename, 1, 1)
 	{
 		auto *fstream  = new std::ifstream;
 		//必须先赋值，否则打开失败的情况下析构无法释放fstream
@@ -407,10 +425,9 @@ clang作为一个c99的扩展支持了该特性。g++直到10版本都还未支�
 	}
 
 	//通常情况下应该只有测试流程会用该种初始化
-	lexer()
-	{
-		input_stream = &std::cin;
-	}
+	lexer()	
+		: input_stream(&std::cin), loc("_std::cin_", 1, 1)
+	{}
 
 	~lexer()
 	{
