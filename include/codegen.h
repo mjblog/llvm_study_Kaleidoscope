@@ -28,6 +28,7 @@ public:
 	virtual VAL_PTR build_if(const if_ast* if_expr) = 0;
 	virtual VAL_PTR build_for(const for_ast* for_expr) = 0;
 	virtual VAL_PTR build_var(const var_ast* var_expr) = 0;
+	virtual void finalize() = 0;
 	virtual bool codegen(const ast_vector_t& global_vec) 
 	{
 		for (auto ast : global_vec)
@@ -53,6 +54,11 @@ public:
 					"global ast other than def/extern\n");
 			}
 		}
+/*
+成功完成生成后调用一次finalize，可以做一些收尾工作。
+如LLVM调试信息生成的DBuilder，就需要finalize。
+*/
+		finalize();
 		return true;
 	};
 	virtual void print_IR() = 0;

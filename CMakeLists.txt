@@ -57,6 +57,10 @@ execute_process(COMMAND ${LLVM_DIR}/bin/llvm-config --libs
 
 set (LLVM_LIBS ${LLVM_LIBS} -lz -ltinfo)
 add_executable(toy_compiler main.cpp ${DIR_SRCS})
+
+#使用了filesystem，在gcc8平台上需要-lstdc++fs，考虑到这个可能是临时的。
+#简单起见，一并放到LLVMLIB中
+set (LLVM_LIBS ${LLVM_LIBS} -lstdc++fs)
 target_link_libraries(toy_compiler ${LLVM_LIBS})
 
 #cmake也有顺序问题，一定要把这个语句放到设置LLVM_CORE_LIBS变量的后面

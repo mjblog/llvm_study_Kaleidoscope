@@ -4,7 +4,8 @@
             "name": "Linux",
             "includePath": [
                 "${workspaceFolder}/**",
-                "${workspaceFolder}/../../opensource/llvmbuild/newllvm-for-lld/install/usr/local/include"
+                "${workspaceFolder}/../../opensource/llvmbuild/newllvm-for-lld/install/usr/local/include",
+                "/usr/include/c++/8"
                 
             ],
             "defines": [],
