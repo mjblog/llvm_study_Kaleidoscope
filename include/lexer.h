@@ -144,6 +144,13 @@ class lexer
 		return new_char;
 	}
 
+	inline void put_back_char(std::istream *in, int& cur_char)
+	{
+		if (cur_char == '\r' || cur_char == '\n')
+			--loc.line;
+		in->putback(cur_char);
+	}
+
 	inline void skip_spaces(std::istream *in, int & cur_char)
 	{
 		while (isspace(cur_char))
@@ -285,8 +292,8 @@ class lexer
 			}
 			else
 			{
+				put_back_char(in, cur_char);
 				//注意cur_char相当于insteam的单字节缓冲，需要一并更新
-				in->putback(cur_char);
 				cur_char = op_str.back();
 				op_str.pop_back();
 			}
