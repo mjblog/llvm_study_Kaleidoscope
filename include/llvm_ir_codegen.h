@@ -1,7 +1,6 @@
 #ifndef _LLVM_IR_CODEGEN_H_
 #define _LLVM_IR_CODEGEN_H_
 
-#include <filesystem>
 #include "codegen.h"
 #include "ast.h"
 
@@ -21,41 +20,10 @@ struct llvm_debug_info
 	DIBuilder* DBuilder;
 	DICompileUnit* compile_unit;
 	DIType* double_type;
+	std::vector<DIScope*> lexical_blocks;
 public:
-	llvm_debug_info(Module* mod, const string& source)
-	{
-		DBuilder = new DIBuilder(*mod);
-		namespace fs = std::filesystem;
-		fs::path src_path(source);
-		std::error_code ec;
-		src_path = fs::canonical(src_path, ec);
-		string_view src_dir = "";
-		string_view src_file = "";
-		if (!ec)
-		{
-			src_dir = src_path.parent_path().native();
-			src_file = src_path.filename().native();
-		}
-
-/*
-没有设置语言abi的情况下，LLVM默认按照C方式配置ABI，第一个选项为DW_LANG_C。
-第四个选项不是指有没有开启编译优化，应该是给调试器用的信息(
-参考https://reviews.llvm.org/D41985)。所以维持原示例的false设置。
-第五个runtime version还不存在，所以设置为0.
-*/
-		compile_unit = DBuilder->createCompileUnit(dwarf::DW_LANG_C,
-			DBuilder->createFile(src_file, src_dir), "Kaleidoscope Compiler",
-			false, "", 0);
-		double_type = DBuilder->createBasicType("double",
-			64, dwarf::DW_ATE_float);
-		assert(compile_unit != nullptr);
-		assert(double_type != nullptr);
-	}
-
-	~llvm_debug_info()
-	{
-		delete DBuilder;
-	}
+	llvm_debug_info(Module* mod, const string& source);
+	~llvm_debug_info();
 };
 
 class LLVM_IR_code_generator final : public code_generator<Value *>
@@ -100,6 +68,7 @@ public:
 	void print_IR_to_file(string& filename);
 	Module* get_module(){return the_module;}
 	void finalize() {debug_info->DBuilder->finalize();}
+	void emit_location(generic_ast* ast);
 };
 /*
 class MAPLE_IR_code_generator : public code_generator

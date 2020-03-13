@@ -1,5 +1,6 @@
 #include <cassert>
 #include <memory>
+#include <filesystem>
 
 #include "llvm_ir_codegen.h"
 #include "utils.h"
@@ -57,6 +58,60 @@ transfer of control bypasses initialization of:
 	bb = BasicBlock::Create(the_context, "entry", cur_func);
 	ir_builder.SetInsertPoint(bb);
 
+/*
+调试信息应该用选项控制，可在constructor中控制debug_info的初始化
+push scope的动作必须在args的生成动作之前，因为现在入参也有store指令。
+如果为了debug代码合并到一块，args的store指令调试信息指向的scope会
+是错误的上一个函数。为了保持verifyFunction的正常工作，
+还是将调试信息的发射代码拆分为两块。scope的创建和push提前。
+*/
+	if (debug_info)
+	{
+		auto dbg_builder = debug_info->DBuilder;
+		auto cu = debug_info->compile_unit;
+/*
+fixme!!Unit 似乎不应该重复分配？如果同一个compile_unit中
+出现多个文件，如C中的#include，这里应该从ast中取filename和dir。
+*/
+		DIFile* unit = dbg_builder->createFile(
+			cu->getFilename(), cu->getDirectory());
+		DIScope* fun_context = unit;
+		DIType* double_type = debug_info->double_type;
+		unsigned line_no = proto_ptr->get_line();
+		unsigned scope_line = line_no;
+		auto CreateFunctionType = 
+			[double_type, dbg_builder] (unsigned num_args) 
+		{
+			SmallVector<Metadata *, 8> EltTys;
+			// Add the result type.
+			EltTys.push_back(double_type);
+
+			for (unsigned i = 0, e = num_args; i != e; ++i)
+				EltTys.push_back(double_type);
+
+			return dbg_builder->createSubroutineType(
+				dbg_builder->getOrCreateTypeArray(EltTys));
+		};
+
+		DISubprogram *sub_prog = dbg_builder->createFunction(
+			fun_context, proto_ptr->get_name(), StringRef(), unit, line_no,
+			CreateFunctionType(cur_func->arg_size()), scope_line,
+			DINode::FlagPrototyped, DISubprogram::SPFlagDefinition);
+		cur_func->setSubprogram(sub_prog);
+		// Push the current scope.
+		debug_info->lexical_blocks.push_back(sub_prog);
+/*
+我们不想要调试器跳过prologue，所以删去了原示例的下面片段
+  // Unset the location for the prologue emission (leading instructions with no
+  // location in a function are considered part of the prologue and the debugger
+  // will run past them when breaking on a function)
+  KSDbgInfo.emitLocation(nullptr);
+但是这里必须发射一次，否则ir_builder看到的scope还没改过来
+*/
+		emit_location(proto_ptr);
+	}
+
+
 	//创建args查找map，方便后续variable引用
 	named_var.clear();
 	for (auto &arg : cur_func->args())
@@ -67,6 +122,33 @@ transfer of control bypasses initialization of:
 		named_var[arg_name] = arg_alloca;
 	}
 
+	//为所有的入参准备调试信息
+	if (debug_info)
+	{
+		auto dbg_builder = debug_info->DBuilder;
+		auto sub_prog = cur_func->getSubprogram();
+		auto line_no = sub_prog->getLine();
+		auto unit = sub_prog->getFile();
+		auto double_type = debug_info->double_type;
+		unsigned int arg_idx = 0;	//arg_idx不能放到for里面，否则始终为0
+		for (const auto& arg : named_var)
+		{
+			auto& name = arg.first;
+			auto& alloca = arg.second;
+			// Create a debug descriptor for the variable.
+
+			DILocalVariable *des = dbg_builder->createParameterVariable(
+				sub_prog, name, ++arg_idx, unit, line_no, double_type, true);
+
+			dbg_builder->insertDeclare(alloca, des,
+				dbg_builder->createExpression(),
+				DebugLoc::get(line_no, 0, sub_prog), 
+				ir_builder.GetInsertBlock());
+		}
+	}
+
+	//原示例在这里emitLocation(body)是冗余的，每一个ast自己会去emit
+
 	//3 生成body
 	//build_expr中会调用ir_builder插入计算expr结果的运算指令
 	ret_val = build_expr(func->get_body().get());
@@ -74,16 +156,33 @@ transfer of control bypasses initialization of:
 	{
 		err_print(false, "can not generate body for function %s\n",
 			proto_ptr->get_name().c_str());
-		goto err_exit;
+		//在有调试信息时，还需弹出debug 的scope
+		goto err_exit_pop_debug_block;
 	}
 
-    assert(ir_builder.CreateRet(ret_val) != nullptr);
-    // 检查错误，没有错误时返回false
-    assert(verifyFunction(*cur_func, &errs()) == false);
+	assert(ir_builder.CreateRet(ret_val) != nullptr);
+	if (auto sp = cur_func->getSubprogram(); sp != nullptr)
+		debug_info->DBuilder->finalizeSubprogram(sp);
+
+	//verifyFunction检查错误，没有错误时返回false
+	if (verifyFunction(*cur_func, &errs()) != false)
+	{
+		//校验失败视为致命错误，打印IR帮助查看问题
+		print_IR();
+		abort();
+	}
+
 	//只要离开本函数，都应该把cur_func重新设置为空
 	cur_func = nullptr;
+	//弹出调试信息的scope
+	if (debug_info)
+		debug_info->lexical_blocks.pop_back();
 	return true;
 
+err_exit_pop_debug_block:
+//弹出调试信息的scope
+	if (debug_info)
+		debug_info->lexical_blocks.pop_back();
 err_exit:
   //remove  function which is incompleted
 	cur_func->eraseFromParent();
@@ -114,6 +213,8 @@ bool LLVM_IR_code_generator::gen_prototype(const prototype_ast* proto)
 
 Value* LLVM_IR_code_generator::build_expr(const expr_ast* expr)
 {
+	//如果是type异常下面会abort，没有必要再检查expr的type
+	emit_location((generic_ast*) expr);
 	switch (expr->get_type())
 	{
 		case CALL_AST:
@@ -685,6 +786,59 @@ void LLVM_IR_code_generator::print_IR_to_file(string& filename)
 		return;
 	}
 	the_module->print(out_stream, nullptr);
+}
+
+llvm_debug_info::llvm_debug_info(Module* mod, const string& source)
+{
+	DBuilder = new DIBuilder(*mod);
+	namespace fs = std::filesystem;
+	fs::path src_path(source);
+	std::error_code ec;
+	src_path = fs::canonical(src_path, ec);
+	string_view src_dir = "_uninitilized_";
+	string_view src_file = "_uninitilized_";
+	if (!ec)
+	{
+		src_dir = src_path.parent_path().native();
+		src_file = src_path.filename().native();
+	}
+
+/*
+没有设置语言abi的情况下，LLVM默认按照C方式配置ABI，第一个选项为DW_LANG_C。
+第四个选项不是指有没有开启编译优化，应该是给调试器用的信息(
+参考https://reviews.llvm.org/D41985)。所以维持原示例的false设置。
+第五个runtime version还不存在，所以设置为0.
+*/
+	compile_unit = DBuilder->createCompileUnit(dwarf::DW_LANG_C,
+		DBuilder->createFile(src_file, src_dir), "Kaleidoscope Compiler",
+		false, "", 0);
+	double_type = DBuilder->createBasicType("double",
+		64, dwarf::DW_ATE_float);
+	assert(compile_unit != nullptr);
+	assert(double_type != nullptr);
+}
+
+void LLVM_IR_code_generator::emit_location(generic_ast* ast)
+{
+	if (!debug_info)
+		return;
+
+	DIScope* scope;
+
+	if (debug_info->lexical_blocks.empty())
+		scope = debug_info->compile_unit;
+	else
+		scope = debug_info->lexical_blocks.back();
+	auto ast_line = ast->get_line();
+	auto ast_col = ast->get_col();
+	ir_builder.SetCurrentDebugLocation(
+		DebugLoc::get(ast_line, ast_col, scope));
+
+}
+
+llvm_debug_info::~llvm_debug_info()
+{
+	delete DBuilder;
 }
 
 }	//end of toy_compiler

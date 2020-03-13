@@ -78,6 +78,8 @@ public:
 	uint64_t get_id() const {return id;}
 	void set_id(uint64_t in_id) {id = in_id;}
 	const source_location& get_source_location() {return loc;}
+	int64_t get_line() const {return loc.line;}
+	int64_t get_col() const {return loc.col;}
 	ast_t get_type() const {return type;}
 protected:
 	source_location loc;
