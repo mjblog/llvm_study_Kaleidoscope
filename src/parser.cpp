@@ -58,6 +58,7 @@ void parser::handle_definition()
 //definition 有两个ast，表达原型的prototype_ast和函数体body的expr_ast
 shared_ptr<function_ast> parser::parse_definition()
 {
+	source_location ast_loc = linked_lexer.get_source_loc();
 /* definition 就是函数，其格式为： 关键字def  prototype body*/
 	assert(parser::get_cur_token().type == TOKEN_DEF);
 	get_next_token();	//def无需记录，直接吃掉def这个token
@@ -69,13 +70,14 @@ shared_ptr<function_ast> parser::parse_definition()
 	print_and_return_nullptr_if_check_fail(body != nullptr, 
 		"fail to get the body for function %s\n", proto->get_name().c_str());
 
-	return build_ast<function_ast>(std::move(proto), std::move(body));
+	return build_ast<function_ast>(ast_loc, std::move(proto), std::move(body));
 }
 
 
 //解析函数原型（也包括用户自定义的operator）
 prototype_t parser::parse_prototype()
 {
+	source_location ast_loc = linked_lexer.get_source_loc();
 /*
 prototype有三种格式。
 第一种是函数： 函数名 左括号 参数 右括号
@@ -158,7 +160,7 @@ prototype有三种格式。
 	*/
 		if (find_prototype(name) != nullptr)
 			err_print(true, "%s redefined\n", name.c_str());
-		ret = build_ast<prototype_ast>(name, std::move(args));
+		ret = build_ast<prototype_ast>(ast_loc, name, std::move(args));
 	}
 	else
 	{	//operator 生成
@@ -186,7 +188,8 @@ prototype有三种格式。
 		print_and_return_nullptr_if_check_fail((size_t)args_num_limit == 
 			args.size(), "operator expected %d args but got %ld\n",
 			args_num_limit, args.size());
-		ret = build_ast<prototype_ast>(name, std::move(args), true, op_prio);
+		ret = build_ast<prototype_ast>(ast_loc, name,
+			std::move(args), true, op_prio);
 	}
 /*
 注意这里一定要先转为string_view再make_pair，否则这里会临时构造出一个
@@ -266,6 +269,7 @@ expr_t parser::parse_unary_expr()
 		return parse_primary_expr();
 	else
 	{
+		source_location ast_loc = linked_lexer.get_source_loc();
 		const string opcode = cur_token.get_str();
 		get_next_token();	//吃掉当前的unary
 		auto operand = parse_unary_expr();
@@ -273,7 +277,7 @@ expr_t parser::parse_unary_expr()
 			"get the operand of unary %s\n", opcode.c_str());
 		const auto& name = prototype_ast::build_operator_external_name(1,
 			opcode);
-		return build_ast<unary_operator_ast>(opcode,
+		return build_ast<unary_operator_ast>(ast_loc, opcode,
 			std::move(operand), std::move(name));
 	}
 }
@@ -342,6 +346,7 @@ expr_t parser::parse_binary_expr(int prev_op_prio, expr_t lhs)
 		auto cur_op_type = binary_operator_ast::get_binary_op_type(cur_token);
 		//unknown是实现错误
 		assert(cur_op_type != BINARY_UNKNOWN);
+		source_location ast_loc = linked_lexer.get_source_loc();
 		int cur_op_prio = -1;
 		string op_external_name;
 		if (cur_op_type != BINARY_USER_DEFINED)
@@ -368,7 +373,7 @@ expr_t parser::parse_binary_expr(int prev_op_prio, expr_t lhs)
 					"destination of '=' must be a variable\n");
 			}
 
-			lhs = build_ast<binary_operator_ast>(
+			lhs = build_ast<binary_operator_ast>(ast_loc,
 				cur_op_type, lhs, new_rhs, op_external_name);
 		}
 		else
@@ -378,18 +383,20 @@ expr_t parser::parse_binary_expr(int prev_op_prio, expr_t lhs)
 
 expr_t parser::parse_number()
 {
+	source_location ast_loc = linked_lexer.get_source_loc();
 	double num_d = get_double_from_number_token(get_cur_token());
 	get_next_token();		//吃掉当前的number token
-	return build_ast<number_ast>(num_d);
+	return build_ast<number_ast>(ast_loc, num_d);
 }
 
 //该函数要处理variable变量和call调用两种情况
 expr_t parser::parse_identifier()
 {
+	source_location ast_loc = linked_lexer.get_source_loc();
 	string name = get_cur_token().get_str();
 	auto next_token = get_next_token();
 	if (next_token != TOKEN_LEFT_PAREN)
-		return build_ast<variable_ast>(name);
+		return build_ast<variable_ast>(ast_loc, name);
 	else
 		get_next_token(); //吃掉左括号
 	vector<expr_t> args;
@@ -407,7 +414,7 @@ expr_t parser::parse_identifier()
 			print_and_return_nullptr_if_check_fail(find_callee != nullptr, 
 				"can not find prototype for %s\n", name.c_str());
 			prototype_t callee(find_callee);
-			return build_ast<call_ast>(callee, std::move(args));
+			return build_ast<call_ast>(ast_loc, callee, std::move(args));
 		}
 		auto arg = parse_expr();
 		print_and_return_nullptr_if_check_fail(arg != nullptr, 
@@ -441,6 +448,7 @@ expr_t parser::parse_paren()
 // if的语法为: IF expr THEN expr ELSE expr
 expr_t parser::parse_if() 
 {
+	source_location ast_loc = linked_lexer.get_source_loc();
 	const token* cur_token;
 	get_next_token();	//吃掉IF
 	const auto& cond = parse_expr();
@@ -475,7 +483,7 @@ Erlang语言的if如果没有condition为真，会抛出异常。
 	print_and_return_nullptr_if_check_fail(expr_in_else != nullptr, 
 		"failed to parse else expr in if_ast\n");
 
-	return build_ast<if_ast>(cond, expr_in_then, expr_in_else);
+	return build_ast<if_ast>(ast_loc, cond, expr_in_then, expr_in_else);
 }
 
 /*
@@ -488,6 +496,7 @@ FOR i = 1 : i < n : 1.0 IN
 */
 expr_t parser::parse_for() 
 {
+	source_location ast_loc = linked_lexer.get_source_loc();
 	const token* cur_token;
 	get_next_token();									//吃掉FOR
 	cur_token = &(get_cur_token());		//吃掉FOR后，第一个是变量名
@@ -536,8 +545,8 @@ expr_t parser::parse_for()
 	expr_t body = parse_expr();
 	print_and_return_nullptr_if_check_fail(body != nullptr, 
 		"failed to parse body in for_ast\n");
-	return build_ast<for_ast>(std::move(idt_var_name), std::move(start),
-		std::move(end), std::move(step), std::move(body));
+	return build_ast<for_ast>(ast_loc, std::move(idt_var_name),
+		std::move(start), std::move(end), std::move(step), std::move(body));
 }
 
 /*
@@ -554,6 +563,7 @@ b
 */
 expr_t parser::parse_var() 
 {
+	source_location ast_loc = linked_lexer.get_source_loc();
 	get_next_token();	//吃掉var
 	vector<string> names;
 	expr_vector values;
@@ -567,7 +577,7 @@ expr_t parser::parse_var()
 
 		cur_token = &(get_cur_token());
 		//不设置var的初始值，默认为0
-		expr_t var_value = build_ast<number_ast>(0);
+		expr_t var_value = build_ast<number_ast>(ast_loc, 0);
 		//可选的=expr设置变量的初始值
 		if (*cur_token == TOKEN_BINARY_OP && cur_token->get_str() == "=")
 		{
@@ -600,7 +610,7 @@ expr_t parser::parse_var()
 	auto body = parse_expr();
 	print_and_return_nullptr_if_check_fail(body != nullptr,
 		"failed to get body for var ast\n");
-	return build_ast<var_ast>(names, values, body);
+	return build_ast<var_ast>(ast_loc, names, values, body);
 }
 
 void parser::handle_extern()
