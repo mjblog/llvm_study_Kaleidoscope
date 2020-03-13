@@ -1,3 +1,4 @@
 //变量类型，变量名称，变量默认值，用于控制该变量的环境变量名称，变量作用描述
 DECL_FLAG(bool, save_temps, false, "save_temps", "keep intermediate files")
-DECL_FLAG(bool, no_optimization, false, "no_opti", "disable optimizations")
+DECL_FLAG(bool, optimization, true, "opti", "enable optimizations")
+DECL_FLAG(bool, debug_info, true, "debug_info", "emit debug info")

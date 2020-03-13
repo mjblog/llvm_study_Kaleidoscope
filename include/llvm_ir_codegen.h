@@ -3,7 +3,7 @@
 
 #include "codegen.h"
 #include "ast.h"
-
+#include "flags.h" //for global_flags.debug_info
 #include "llvm/IR/Type.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Module.h"
@@ -31,22 +31,24 @@ class LLVM_IR_code_generator final : public code_generator<Value *>
 	LLVMContext the_context;
 	IRBuilder<> ir_builder;
 	Module* the_module;
-	Function* cur_func;
-	llvm_debug_info* debug_info;
+	Function* cur_func = nullptr;
+	llvm_debug_info* debug_info = nullptr;
 	std::map<std::string, AllocaInst *> named_var;
 	AllocaInst* create_alloca_at_func_entry(Function* func, 
 		const string& var_ame);
 public:
 	LLVM_IR_code_generator(StringRef file_name = "unamed") 
-		: ir_builder(the_context) , cur_func(nullptr)
+		: ir_builder(the_context)
 	{
 		the_module = new(Module)(file_name, the_context);
-		debug_info = new(llvm_debug_info)(the_module, file_name.str());
+		if (global_flags.debug_info)
+			debug_info = new(llvm_debug_info)(the_module, file_name.str());
 	}
 
 	~LLVM_IR_code_generator()
 	{
-		delete debug_info;
+		if (debug_info)
+			delete debug_info;
 		delete the_module;
 	};
 	bool gen_function(const function_ast* func) override;
@@ -67,7 +69,11 @@ public:
 	void print_IR_to_file(int fd);
 	void print_IR_to_file(string& filename);
 	Module* get_module(){return the_module;}
-	void finalize() {debug_info->DBuilder->finalize();}
+	void finalize()
+	{
+		if (debug_info)
+			debug_info->DBuilder->finalize();
+	}
 	void emit_location(generic_ast* ast);
 };
 /*

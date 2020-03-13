@@ -1,3 +1,5 @@
+#ifndef _FLAGS_H_
+#define _FLAGS_H_
 #include <cstdlib>
 #include <sstream>
 /*
@@ -40,3 +42,5 @@ public:
 };
 extern control_flags global_flags;
 }	//end of toy_compiler
+
+#endif
