@@ -42,7 +42,7 @@ static bool file_compile(const char* infile)
 	parser t_parser(t_lexer);
 	t_parser.parse();
 	const auto& ast_vec = t_parser.get_ast_vec();
-	LLVM_IR_code_generator code_generator;
+	LLVM_IR_code_generator code_generator(infile);
 	code_generator.codegen(ast_vec);
 	Module* module = code_generator.get_module();
 	if (!global_flags.optimization)

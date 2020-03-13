@@ -795,8 +795,8 @@ llvm_debug_info::llvm_debug_info(Module* mod, const string& source)
 	fs::path src_path(source);
 	std::error_code ec;
 	src_path = fs::canonical(src_path, ec);
-	string_view src_dir = "_uninitilized_";
-	string_view src_file = "_uninitilized_";
+	string src_dir = "_uninitilized_";
+	string src_file = "_uninitilized_";
 	if (!ec)
 	{
 		src_dir = src_path.parent_path().native();
