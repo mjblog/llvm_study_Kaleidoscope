@@ -161,6 +161,22 @@ fixme!!Unit 似乎不应该重复分配？如果同一个compile_unit中
 	}
 
 	assert(ir_builder.CreateRet(ret_val) != nullptr);
+	
+/*
+我们的实现为了方便控制调试信息的发射，
+将调试信息的发射拆分成了两块。args的调试信息在args的store指令之后发射。
+这会导致下面错误的发生。
+Expected no forward declarations!
+!6 = <temporary!> !{}
+  store double %x, double* %x1, !dbg !7
+  store double %y, double* %y2, !dbg !7
+  call void @llvm.dbg.declare(metadata double* %x1, metadata !8, metadata !DIExpression()), !dbg !9
+  call void @llvm.dbg.declare(metadata double* %y2, metadata !10, metadata !DIExpression()), !dbg !9
+
+使用 def foo (x y) x+y即可复现。
+看起来dbg.declare需要放到对应store指令的前面。
+不过，添加finalizeSubprogram可以自动更正错误。
+*/
 	if (auto sp = cur_func->getSubprogram(); sp != nullptr)
 		debug_info->DBuilder->finalizeSubprogram(sp);
 
