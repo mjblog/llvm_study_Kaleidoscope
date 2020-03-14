@@ -69,5 +69,19 @@ add_subdirectory(test)
 
 
 #添加output等库函数
+#使用刚刚做出的compiler编译扩展operator，一并加入core_support库
+add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/core_operator.o
+                   COMMAND cp ${CMAKE_SOURCE_DIR}/src/lib/core_operator ${CMAKE_CURRENT_BINARY_DIR}/
+                   COMMAND env builtin_core_operator=0 ${CMAKE_CURRENT_BINARY_DIR}/toy_compiler ${CMAKE_CURRENT_BINARY_DIR}/core_operator
+                   DEPENDS src/lib/core_operator toy_compiler
+                   COMMENT "generating operator lib")
+
 FILE(GLOB CORE_LIB_SRC src/lib/*.cpp)
-add_library(core_support STATIC  ${CORE_LIB_SRC})
+add_library(core_support STATIC  ${CORE_LIB_SRC} ${CMAKE_CURRENT_BINARY_DIR}/core_operator.o)
+
+#指定安装文件
+set(CMAKE_INSTALL_PREFIX /usr/local)
+install(TARGETS toy_compiler  core_support 
+                DESTINATION bin)
+install(PROGRAMS ${CMAKE_SOURCE_DIR}/compiler.sh
+                DESTINATION bin)

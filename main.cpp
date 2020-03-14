@@ -22,7 +22,8 @@ prepare_builtin_operator是个临时解决方案，用于导入一系列
 extern声明，使得用户可以直接使用以库方式实现的operator。
 更完善的方案可能是实现c中的#include机制，把extern放到头文件中。
 */
-	t_parser.prepare_builtin_operator();
+	if (global_flags.builtin_core_operator)
+		t_parser.prepare_builtin_operator();
 	t_parser.parse();
 	const auto& ast_vec = t_parser.get_ast_vec();
 	LLVM_IR_code_generator code_generator;
@@ -51,7 +52,8 @@ prepare_builtin_operator是个临时解决方案，用于导入一系列
 extern声明，使得用户可以直接使用以库方式实现的operator。
 更完善的方案可能是实现c中的#include机制，把extern放到头文件中。
 */
-	t_parser.prepare_builtin_operator();
+	if (global_flags.builtin_core_operator)
+		t_parser.prepare_builtin_operator();
 	t_parser.parse();
 	const auto& ast_vec = t_parser.get_ast_vec();
 	LLVM_IR_code_generator code_generator(infile);
@@ -71,13 +73,14 @@ extern声明，使得用户可以直接使用以库方式实现的operator。
 
 int main(int argc, char* argv[])
 {
+	bool compile_ok = false;
 	switch (argc)
 	{
 		case 1:
 			stdin_stdout_compile();
 			return 0;
 		case 2:
-			return file_compile(argv[1]);
+			compile_ok = file_compile(argv[1]);
 			break;
 		default:
 			cout << "wrong input found, exiting\n" << endl;
@@ -85,5 +88,5 @@ int main(int argc, char* argv[])
 			return 1;
 	}
 
-	return 0;
+	return !compile_ok;
 }

@@ -2,3 +2,4 @@
 DECL_FLAG(bool, save_temps, false, "save_temps", "keep intermediate files")
 DECL_FLAG(bool, optimization, true, "opti", "enable optimizations")
 DECL_FLAG(bool, debug_info, true, "debug_info", "emit debug info")
+DECL_FLAG(bool, builtin_core_operator, true, "builtin_core_operator", "import extended operator declarations")
