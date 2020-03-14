@@ -382,7 +382,7 @@ is_binary_op、is_unary_op等函数。
 "def mt(x)													"
 "	x + -x														");
 }, 
-	"- is a protected char, which shoud not be redefined"
+	"'-' is a protected char, which shoud not be redefined"
 	);
 }
 

@@ -108,7 +108,7 @@ fixme!!Unit 似乎不应该重复分配？如果同一个compile_unit中
   KSDbgInfo.emitLocation(nullptr);
 但是这里必须发射一次，否则ir_builder看到的scope还没改过来
 */
-		emit_location(proto_ptr);
+		emit_location(proto_ptr->get_loc());
 	}
 
 
@@ -213,8 +213,6 @@ bool LLVM_IR_code_generator::gen_prototype(const prototype_ast* proto)
 
 Value* LLVM_IR_code_generator::build_expr(const expr_ast* expr)
 {
-	//如果是type异常下面会abort，没有必要再检查expr的type
-	emit_location((generic_ast*) expr);
 	switch (expr->get_type())
 	{
 		case CALL_AST:
@@ -263,12 +261,13 @@ Value* LLVM_IR_code_generator::build_call(const call_ast* callee)
 			idx, callee_name.c_str());
 		args_vec.push_back(arg_val);
 	}
-
+	emit_location(callee->get_loc());
 	return ir_builder.CreateCall(callee_func, args_vec, "call" + callee_name);
 }
 
 Value* LLVM_IR_code_generator::build_number(const number_ast* num)
 {
+	emit_location(num->get_loc());
 	//直接转换为llvm的值就可以了
 	return ConstantFP::get(the_context, APFloat(num->get_val()));
 }
@@ -276,6 +275,7 @@ Value* LLVM_IR_code_generator::build_number(const number_ast* num)
 //当前还未支持局部变量定义和全局变量定义，实际上variable就只有入参
 Value* LLVM_IR_code_generator::build_variable(const variable_ast* var)
 {
+	emit_location(var->get_loc());
 /*
  named_var 中记录了当前可引用的全部变量。
  为了支持可改写的变量，并保持一致性，所有的变量在初始生成时
@@ -320,6 +320,8 @@ Value* LLVM_IR_code_generator::build_binary_op(const binary_operator_ast* bin)
 	Value* cmp;
 	Function *user_func;
 	const string* op_external_name;
+	//binary_op的操作只包含运算部分，调试信息起点在这里
+	emit_location(bin->get_loc());
 	switch (bin->get_op())
 	{
 		case BINARY_ADD:
@@ -365,6 +367,8 @@ Value* LLVM_IR_code_generator::build_unary_op(const unary_operator_ast* unary)
 		err_print(true, "can not find prototype of unary operator %s,"
 			"aborting\n", op_external_name.c_str()); 
 
+	//unaryop本身只有这条call语句
+	emit_location(unary->get_loc());
 	return ir_builder.CreateCall(user_func, {operand},
 		op_external_name.c_str());
 }
@@ -372,10 +376,15 @@ Value* LLVM_IR_code_generator::build_unary_op(const unary_operator_ast* unary)
 
 Value* LLVM_IR_code_generator::build_if(const if_ast* if_expr)
 {
+
 	Value *cond_val = build_expr(if_expr->get_cond().get());
 	print_and_return_nullptr_if_check_fail(cond_val != nullptr,
 		"can not build condition expr for if\n");
-
+/*
+上面的build_expr会改变loc，原示例中放函数头部会导致比较和跳转指向cond的loc。
+下面的比较和跳转指令是属于if的指令，其loc应该是if表达式的start位置。
+*/
+	emit_location(if_expr->get_loc());
 	// Convert condition to a bool by comparing non-equal to 0.0.
 	cond_val = ir_builder.CreateFCmpONE(cond_val,
 		ConstantFP::get(the_context, APFloat(0.0)), "ifcond");
@@ -462,7 +471,7 @@ then_final_bb:<--------------------|
 	cur_func->getBasicBlockList().push_back(merge_bb);
 	ir_builder.SetInsertPoint(merge_bb);
 	PHINode* PHI_node =
-	ir_builder.CreatePHI(Type::getDoubleTy(the_context), 2, "if_phi");
+		ir_builder.CreatePHI(Type::getDoubleTy(the_context), 2, "if_phi");
 	PHI_node->addIncoming(then_val, then_bb);
 	PHI_node->addIncoming(else_val, else_bb);
 
@@ -632,6 +641,12 @@ after_loop:
 	Value* end_cond = build_expr(for_expr->get_end().get());
 	print_and_return_nullptr_if_check_fail(end_cond != nullptr,
 		"can not build end expr in for_exp\n");
+
+/*
+比较、跳转和操作idt 变量都是从属于for表达式的指令。
+原示例放到函数头部去emit，会导致这些指令从属于cond等表达式。
+*/
+	emit_location(for_expr->get_loc());
 	//这里end_cond被改写成bool
 	end_cond = ir_builder.CreateFCmpONE(
 		end_cond, ConstantFP::get(the_context, APFloat(0.0)), "loopcond");
@@ -659,6 +674,8 @@ after_loop:
 	else 
 		step_val = ConstantFP::get(the_context, APFloat(1.0));
 
+	//更新idt_var的动作属于for表达式
+	emit_location(for_expr->get_loc());
 	//使用stack来记录和更新idt变量
 	Value* idt_var_val = ir_builder.CreateLoad(idt_var);
 	Value* next_idt_val = ir_builder.CreateFAdd(idt_var_val, step_val, "nextvar");
@@ -727,7 +744,8 @@ map没有提供浅拷贝的实现。
 		else
 			named_var[var_name] = var_allocas[i];
 	}
-
+	
+	//var本身没有指令，原示例这里的emit_location无意义
 	auto body =  build_expr(var_expr->get_body().get());
 	print_and_return_nullptr_if_check_fail(body != nullptr, 
 		"failed to build body for var ast\n");
@@ -818,7 +836,7 @@ llvm_debug_info::llvm_debug_info(Module* mod, const string& source)
 	assert(double_type != nullptr);
 }
 
-void LLVM_IR_code_generator::emit_location(generic_ast* ast)
+void LLVM_IR_code_generator::emit_location(const source_location& loc)
 {
 	if (!debug_info)
 		return;
@@ -829,8 +847,8 @@ void LLVM_IR_code_generator::emit_location(generic_ast* ast)
 		scope = debug_info->compile_unit;
 	else
 		scope = debug_info->lexical_blocks.back();
-	auto ast_line = ast->get_line();
-	auto ast_col = ast->get_col();
+	auto ast_line = loc.line;
+	auto ast_col = loc.col;
 	ir_builder.SetCurrentDebugLocation(
 		DebugLoc::get(ast_line, ast_col, scope));
 

@@ -8,6 +8,17 @@
 #include "utils.h" /* for err_print*/
 
 namespace toy_compiler{
+struct source_location
+{
+	std::string file_name;
+	int64_t col;
+	int64_t line;
+public:
+	source_location(const std::string& name, int64_t col = 0, int64_t line = 1)
+		: file_name(name), col(col), line(line)
+	{}
+	source_location(): file_name(" "), col(-1), line(1) {}
+};
 
 /*
 反汇编发现这里的enum类型使用了long表示。
@@ -43,6 +54,7 @@ typedef  enum token_type: unsigned char {
 class token
 {
 	std::string raw_str;
+	source_location loc;
 /*
 	丢弃了原示例中的NumVal，token应该只管str级别的数据
 	另外由于单个token只用一次，用的时候再转也并不会影响效率
@@ -50,6 +62,8 @@ class token
 public:
 	token_type_t type;
 	inline token_type_t get_type() const {return type;}
+	source_location& get_loc() {return loc;}
+	const source_location& get_loc() const {return loc;}
 	static inline token_type_t identifier_str_to_type(const std::string& input)
 	{
 		if (input == "def")
@@ -107,21 +121,9 @@ public:
 	inline operator token_type_t() const  {return type;}
 };
 
-struct source_location
-{
-	std::string file_name;
-	int64_t col;
-	int64_t line;
-public:
-	source_location(const std::string& name, int64_t col = 0, int64_t line = 1)
-		: file_name(name), col(col), line(line)
-	{}
-	source_location(): file_name(" "), col(-1), line(1) {}
-};
-
 class lexer
 {
-	std::istream *input_stream = nullptr;
+	std::istream* input_stream = nullptr;
 	std::string error_msg;
 	token  cur_token;
 	/*
@@ -142,13 +144,6 @@ class lexer
 			++loc.col;
 		
 		return new_char;
-	}
-
-	inline void put_back_char(std::istream *in, int& cur_char)
-	{
-		if (cur_char == '\r' || cur_char == '\n')
-			--loc.line;
-		in->putback(cur_char);
 	}
 
 	inline void skip_spaces(std::istream *in, int & cur_char)
@@ -174,6 +169,7 @@ class lexer
 	{
 		if (isalpha(cur_char))
 		{
+			auto start_loc = loc;
 			std::string& cur_str = cur_token.get_str();
 			cur_str.clear();
 			cur_str += cur_char;
@@ -184,6 +180,7 @@ class lexer
 				cur_char = get_next_char(in);
 			}
 			cur_token.type = cur_token.identifier_str_to_type(cur_str);
+			cur_token.get_loc() = start_loc;
 			return true;
 		}
 		else
@@ -195,6 +192,7 @@ class lexer
 		//改进原示例，数字不能以 ' . ' 开头，只能出现一次' . ' 
 		if (isdigit(cur_char))
 		{
+			auto start_loc = loc;
 			std::string& cur_str = cur_token.get_str();
 			cur_token.type = TOKEN_NUMBER;
 			cur_str.clear();
@@ -214,6 +212,7 @@ class lexer
 				cur_str += cur_char;
 				cur_char = get_next_char(in);
 			}
+			cur_token.get_loc() = start_loc;
 		}
 		else
 			return false;
@@ -227,10 +226,12 @@ class lexer
 		token_type_t token_type = find_protected_char_token(cur_char);
 		if (token_type != TOKEN_UNDEFINED)
 		{
+			auto start_loc = loc;
 			cur_token.get_str().clear();
 			cur_token.get_str() = cur_char;
 			cur_token.type = token_type;
 			cur_char = get_next_char(in);
+			cur_token.get_loc() = start_loc;
 			return true;
 		}
 		else
@@ -240,6 +241,7 @@ class lexer
 	std::unordered_map<std::string, token_type_t> user_defined_op;
 	inline bool install_user_defined_operator(std::istream *in, int& cur_char)
 	{
+		auto start_loc = loc;
 		std::string& cur_str = cur_token.get_str();
 		if (cur_token.type == TOKEN_BINARY)
 			cur_token.type = TOKEN_USER_DEFINED_BINARY_OPERATOR;
@@ -259,6 +261,7 @@ class lexer
 		//可能会插入失败，这里不做检查
 		user_defined_op.insert(make_pair(cur_str, cur_token.type));
 		//正确性检查放到AST去做，更容易做错误处理，这里都返回成功。
+		cur_token.get_loc() = start_loc;
 		return true;
 	}
 
@@ -272,15 +275,32 @@ class lexer
 */
 	bool get_user_defined_operator(std::istream *in, int& cur_char)
 	{
+		auto start_loc = loc;
 		std::string op_str;
 		//遇到identifier、number、'('也需要停止，以便支持!x这样的写法
 		while (!isalnum(cur_char) && !isspace(cur_char) 
 			&& (cur_char != EOF) && cur_char != '(')
 		{
 			op_str += cur_char;
-			cur_char = get_next_char(in);
+			cur_char = in->get();
+/* 
+使用裸的get，不去扰乱loc。operator一定不会导致换行。
+最后只需要手动更新loc.col就可以了。
+*/
+			//cur_char = get_next_char(in);
 		}
 
+/*
+走到这里后最终的loc只需考虑两种情况。
+第一种是匹配到op：
+如果cur_char是换行，则需要补偿换行动作，因为前面我们绕过了get_next_char。
+end_loc.col = 1,  end_loc.line = start_loc.line + 1;
+否则在同一行中移动
+end_loc.col = start_loc.col + op_str.size();
+
+第二种是没有匹配op，所有从stream中取出的字符都放回去了
+end_loc = start_loc
+*/
 		while(op_str.size())
 		{
 			auto op = user_defined_op.find(op_str);
@@ -288,16 +308,27 @@ class lexer
 			{
 				cur_token.type = op->second;
 				cur_token.get_str() = op_str;
+				cur_token.get_loc() = start_loc;
+				//本次成功吃掉了op_str，手动更新col
+				if (cur_char == '\r' || cur_char == '\n')
+				{
+					loc.col = 0;
+					loc.line = start_loc.line + 1;
+				}
+				else
+					loc.col = start_loc.col + op_str.size();
 				return true;
 			}
 			else
 			{
-				put_back_char(in, cur_char);
+				in->putback(cur_char);
 				//注意cur_char相当于insteam的单字节缓冲，需要一并更新
 				cur_char = op_str.back();
 				op_str.pop_back();
 			}
 		}
+		//匹配失败，loc退回到开始的位置
+		loc = start_loc;
 		return false;
 	}
 
@@ -353,7 +384,7 @@ class lexer
 
 public:
 	bool is_ok = true;
-	const source_location& get_source_loc() const {return loc;}
+	const source_location& get_loc() const {return loc;}
 	inline const token & get_cur_token() const {return cur_token;}
 	inline const token & get_next_token()
 	{
@@ -446,6 +477,23 @@ clang作为一个c99的扩展支持了该特性。g++直到10版本都还未支�
 		//依赖stream的析构close
 		if (input_stream != &std::cin && input_stream)
 			delete input_stream;
+	}
+	
+/*
+!!!fixeme为了将以库的方式实现的operator 声明植入。
+这里提供了一个临时的入口，用于替换input_stream的buf。
+注意这不应该是常规操作。
+*/
+	auto get_input_stream()
+	{
+		return input_stream;
+	}
+	//解析完builtin operator声明后，重置cur_char，重置source location
+	void reset_lexer()
+	{
+		cur_char = ' ';
+		loc.col = 0;
+		loc.line = 1;
 	}
 };
 

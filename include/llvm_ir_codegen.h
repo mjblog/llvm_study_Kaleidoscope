@@ -74,7 +74,7 @@ public:
 		if (debug_info)
 			debug_info->DBuilder->finalize();
 	}
-	void emit_location(generic_ast* ast);
+	void emit_location(const source_location& log);
 };
 /*
 class MAPLE_IR_code_generator : public code_generator

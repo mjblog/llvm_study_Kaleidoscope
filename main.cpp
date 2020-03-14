@@ -17,6 +17,12 @@ static void stdin_stdout_compile()
 {
 	lexer t_lexer;
 	parser t_parser(t_lexer);
+/*
+prepare_builtin_operator是个临时解决方案，用于导入一系列
+extern声明，使得用户可以直接使用以库方式实现的operator。
+更完善的方案可能是实现c中的#include机制，把extern放到头文件中。
+*/
+	t_parser.prepare_builtin_operator();
 	t_parser.parse();
 	const auto& ast_vec = t_parser.get_ast_vec();
 	LLVM_IR_code_generator code_generator;
@@ -40,6 +46,12 @@ static bool file_compile(const char* infile)
 		return false;
 	}
 	parser t_parser(t_lexer);
+/*
+prepare_builtin_operator是个临时解决方案，用于导入一系列
+extern声明，使得用户可以直接使用以库方式实现的operator。
+更完善的方案可能是实现c中的#include机制，把extern放到头文件中。
+*/
+	t_parser.prepare_builtin_operator();
 	t_parser.parse();
 	const auto& ast_vec = t_parser.get_ast_vec();
 	LLVM_IR_code_generator code_generator(infile);
@@ -56,7 +68,6 @@ static bool file_compile(const char* infile)
 	}
 	return true;
 }
-
 
 int main(int argc, char* argv[])
 {

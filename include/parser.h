@@ -50,6 +50,8 @@ class parser final
 		return std::make_shared<T>(loc, args...);
 	}
 public:
+//fixme!!添加一个临时入口，用于将以库方式实现的operator 声明导入
+	void prepare_builtin_operator();
 	parser(lexer& in_lexer) : linked_lexer(in_lexer) {}
 	void parse();
 	const ast_vector_t& get_ast_vec() const {return ast_vec;};

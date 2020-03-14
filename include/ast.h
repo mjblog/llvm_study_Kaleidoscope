@@ -77,7 +77,7 @@ public:
 	}
 	uint64_t get_id() const {return id;}
 	void set_id(uint64_t in_id) {id = in_id;}
-	const source_location& get_source_location() {return loc;}
+	const source_location& get_loc() const {return loc;}
 	int64_t get_line() const {return loc.line;}
 	int64_t get_col() const {return loc.col;}
 	ast_t get_type() const {return type;}
@@ -146,7 +146,7 @@ public:
 		if (sym_len == 1
 			&& lexer::find_protected_char_token(sym[0]) != TOKEN_UNDEFINED)
 		{
-			err_print(is_fatal, "%s is a protected char, "
+			err_print(is_fatal, "'%s' is a protected char, "
 				"which shoud not be redefined\n", sym.c_str());
 			is_wrong = true;
 		}
