@@ -29,7 +29,7 @@ extern声明，使得用户可以直接使用以库方式实现的operator。
 	LLVM_IR_code_generator code_generator;
 	code_generator.codegen(ast_vec);
 	Module* module = code_generator.get_module();
-	if (!global_flags.optimization)
+	if (global_flags.optimization)
 		llvm_optimizer::optimize_module(*module);
 	code_generator.print_IR();
 }
@@ -59,7 +59,7 @@ extern声明，使得用户可以直接使用以库方式实现的operator。
 	LLVM_IR_code_generator code_generator(infile);
 	code_generator.codegen(ast_vec);
 	Module* module = code_generator.get_module();
-	if (!global_flags.optimization)
+	if (global_flags.optimization)
 		llvm_optimizer::optimize_module(*module);
 	string outfile = infile + string(".o");
 	toy_compiler::build_object(outfile, module);
