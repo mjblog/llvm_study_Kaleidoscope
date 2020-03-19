@@ -320,6 +320,8 @@ Value* LLVM_IR_code_generator::build_binary_op(const binary_operator_ast* bin)
 		Value *val = build_expr(bin->get_rhs().get());
 		print_and_return_nullptr_if_check_fail(val != nullptr, 
 			"failed to build value for %s =\n", dest_var_name.c_str());
+		//赋值的动作属于= operator，需要发射对应的调试信息位置
+		emit_location(bin->get_loc());
 		//写入rhs的值到lhs的变量中
 		ir_builder.CreateStore(val, search_result->second);
 		//返回rhs的值作为=表达式的返回值，以支持a=(b=c)这样的赋值
@@ -603,7 +605,38 @@ Value* LLVM_IR_code_generator::build_for(const for_ast* for_expr)
 	*/
 	const string& idt_name = for_expr->get_idt_name();
 	AllocaInst * idt_var = create_alloca_at_func_entry(cur_func, idt_name);
+/*
+fixme!!!
+本来这里应该有emit_location();来设置idt_var的位置。
+但是idt_var不是ast，直接记录的是string。
+考虑idt的声明和赋值一般都在同一行，暂时没有修改。
+*/
 	ir_builder.CreateStore(start_val, idt_var);
+	//发射idt_var的调试信息声明
+	if (debug_info)
+	{
+/*
+fixme!!!
+下面的算法还有一些小毛病，声明变量时scope用的是函数。
+但语言中for声明的变量作用域并不是整个函数。
+这可能会导致一些信息失配问题。
+不过，扩大后var的作用域也仍在函数内(且对应存储也一定还在栈上)，
+这样的失配应该不会导致严重的异常（如试图访问非法区域）。
+所以暂时未新增scope的管理。
+*/
+		auto dbg_builder = debug_info->DBuilder;
+		auto sub_prog = cur_func->getSubprogram();
+		auto unit = sub_prog->getFile();
+		auto double_type = debug_info->double_type;
+		auto line_no = for_expr->get_start()->get_line();
+		DILocalVariable *des = dbg_builder->createAutoVariable(
+				sub_prog, idt_name, unit, line_no, double_type, true);
+
+		dbg_builder->insertDeclare(idt_var, des,
+				dbg_builder->createExpression(),
+				DebugLoc::get(line_no, 0, sub_prog), 
+				ir_builder.GetInsertBlock());
+	}
 
 /*
 创建各个基础框架bb，他们的作用分区和作用如下 ： 
@@ -749,6 +782,8 @@ map没有提供浅拷贝的实现。
 		auto var_alloca = create_alloca_at_func_entry(cur_func, name_vec[i]);
 		print_and_return_nullptr_if_check_fail(var_alloca != nullptr,
 			"failed to allocate stack for %s\n", var_name.c_str());
+		//发射变量初始值的行号位置
+		emit_location(value_vec[i]->get_loc());
 		ir_builder.CreateStore(var_value, var_alloca);
 		var_allocas.push_back(var_alloca);
 		if (auto it = named_var.find(var_name); it != named_var.end())
@@ -760,8 +795,40 @@ map没有提供浅拷贝的实现。
 		else
 			named_var[var_name] = var_allocas[i];
 	}
-	
-	//var本身没有指令，原示例这里的emit_location无意义
+
+	//如果需要发射调试信息，var中的局部变量需要声明
+	if (debug_info)
+	{
+/*
+fixme!!!
+下面的算法还有一些小毛病，声明变量时scope用的是函数。
+但语言中var声明的变量作用域并不是整个函数。
+这可能会导致一些信息失配问题。
+不过，扩大后var的作用域也仍在函数内(且对应存储也一定还在栈上)，
+这样的失配应该不会导致严重的异常（如试图访问非法区域）。
+所以暂时未新增scope的管理。
+*/
+		auto dbg_builder = debug_info->DBuilder;
+		auto sub_prog = cur_func->getSubprogram();
+		auto unit = sub_prog->getFile();
+		auto double_type = debug_info->double_type;
+		for (size_t i = 0; i < value_vec.size(); ++i)
+		{
+			auto line_no = value_vec[i]->get_line();
+			DILocalVariable *des = dbg_builder->createAutoVariable(
+				sub_prog, name_vec[i], unit, line_no, double_type, true);
+
+			dbg_builder->insertDeclare(var_allocas[i], des,
+				dbg_builder->createExpression(),
+				DebugLoc::get(line_no, 0, sub_prog), 
+				ir_builder.GetInsertBlock());
+		}
+	}
+
+/*
+原示例这里的emit_location无意义，build_expr进入会发射
+自己的location位置。
+*/
 	auto body =  build_expr(var_expr->get_body().get());
 	print_and_return_nullptr_if_check_fail(body != nullptr, 
 		"failed to build body for var ast\n");
